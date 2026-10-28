@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "OrderMori",
+    "slug": "ordermori",
+    "version": "0.1.0",
+    "scheme": "ordermori",
+    "platforms": [
+      "ios"
+    ],
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.zhushunli.ordermori"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      "expo-status-bar",
+      "expo-font"
+    ]
+  }
+}

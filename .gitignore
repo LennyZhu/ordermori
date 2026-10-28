@@ -78,3 +78,12 @@ temp/
 ._*
 .Spotlight-V100/
 .Trashes/
+
+# Isolated local Spike workspace and generated native projects
+/spikes/
+/ios/
+/android/
+expo-env.d.ts
+
+# Local visual references (original PNGs, screenshots and archives)
+/ordermori-ui-reference/
