@@ -1,12 +1,13 @@
+import { businessMediaRoot } from './mediaRoot';
 import { Image } from 'react-native';
-import { Directory, File, FileMode, Paths } from 'expo-file-system';
+import { Directory, File, FileMode } from 'expo-file-system';
 import { randomUUID } from 'expo-crypto';
 import { DomainError } from '../domain/model';
 import type { PaymentAsset, QrState } from '../domain/payment';
 import { copyOfficialQr } from './qrCopy';
 import type { QrCopyPort, QrFileInfo } from './qrCopy';
 
-const root = () => new Directory(Paths.document, 'ordermori');
+const root = businessMediaRoot;
 export function paymentAssetUri(asset: Pick<PaymentAsset, 'relativePath'>): string {
   if (!/^payment-assets\/[a-f0-9-]{36}\.(png|jpg)$/.test(asset.relativePath)) throw new DomainError('asset', '收款圖片路徑不完整。');
   return new File(root(), asset.relativePath).uri;

@@ -72,13 +72,18 @@ export default function ShopScreen() {
             <Ionicons name="wallet-outline" size={21} color={color.ink} /><View style={{ flex: 1, gap: 3 }}><Text style={e.fieldLabel}>收款方式與官方二維碼</Text><Text style={e.caption}>FPS、PayMe 及銀行轉帳</Text></View><Ionicons name="chevron-forward" size={16} color={color.muted} />
           </Pressable>
         </View>
+        <View style={{ gap: 8 }}><SectionHeading title="資料與備份" />
+          <Pressable accessibilityRole="button" onPress={() => router.push('/shop/backup')} style={({ pressed }) => [e.surface, e.inset, e.row, pressed && e.pressed]}>
+            <Ionicons name="archive-outline" size={21} color={color.ink} /><View style={{ flex: 1, gap: 3 }}><Text style={e.fieldLabel}>備份與還原</Text><Text style={e.caption}>完整本機備份，安全取代還原</Text></View><Ionicons name="chevron-forward" size={16} color={color.muted} />
+          </Pressable>
+        </View>
         <View style={[e.surface, e.inset]}>
           <View style={[e.rowWrap, { justifyContent: 'space-between' }]}><Text style={e.sectionTitle}>Free</Text><Text style={e.numeric}>{count ?? '—'} / {FREE_LIMIT} 張</Text></View>
           <View style={e.divider} /><Text style={e.caption}>累計前 {FREE_LIMIT} 張真實訂單免費，取消及退款不退還額度。</Text>
           <Text style={e.caption}>Pro 購買尚未開放。</Text>
         </View>
         <View style={{ gap: 8 }}><View style={e.row}><Ionicons name="lock-closed-outline" size={15} color={color.muted} /><Text style={e.fieldLabel}>本機資料，無需登入</Text></View>
-          <Text style={e.caption}>資料只儲存在此裝置，暫未提供備份；刪除 App 將移除本機資料。</Text></View>
+          <Text style={e.caption}>資料只儲存在此裝置，請自行保管備份；刪除 App 將移除本機資料。</Text></View>
       </ScrollView>
     </KeyboardAvoidingView>
   </SafeAreaView>;

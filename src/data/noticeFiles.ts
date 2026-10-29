@@ -1,5 +1,6 @@
+import { businessMediaRoot } from './mediaRoot';
 import { Image } from 'react-native';
-import { Directory, File, FileMode, Paths } from 'expo-file-system';
+import { Directory, File, FileMode } from 'expo-file-system';
 import { CryptoDigestAlgorithm, digestStringAsync, randomUUID } from 'expo-crypto';
 import { DomainError } from '../domain/model';
 import { hasPngEnd, readNoticePngHeader } from '../domain/noticePng';
@@ -10,7 +11,7 @@ import { inspectNoticePixels } from '../domain/noticePixels';
 import type { NoticeInkRegion } from '../domain/noticePixels';
 import { NoticeStageError } from '../domain/noticeDiagnostics';
 
-const folder = () => new Directory(Paths.document, 'ordermori', 'payment-notices');
+const folder = () => new Directory(businessMediaRoot(), 'payment-notices');
 export function noticeFileUri(record: Pick<NoticeFileRecord, 'id' | 'relativePath'>): string {
   if (!/^[a-f0-9-]{36}$/.test(record.id) || record.relativePath !== `payment-notices/${record.id}.png`) throw new DomainError('notice', '付款通知檔案路徑無效。');
   return new File(folder(), `${record.id}.png`).uri;

@@ -22,6 +22,9 @@ interface PaymentRow { id: string; shop_id: string; kind: PaymentKind; payload: 
 interface AssetRow { id: string; shop_id: string; kind: 'fps' | 'payme'; relative_path: string; mime: PaymentAsset['mime']; byte_count: number; sha256: string; width: number; height: number }
 
 export class OrderStore {
+  private paused = false;
+  private retired = false;
+  retire() { this.retired = true; }
   private tail: Promise<unknown> = Promise.resolve();
   private listeners = new Set<() => void>();
   private db: DatabasePort;
@@ -37,9 +40,18 @@ export class OrderStore {
   // This private connection is never exposed: ALL reads and writes enter this queue.
   // No asynchronous query can accidentally enter another operation's transaction.
   private enqueue<T>(work: () => Promise<T>): Promise<T> {
+    if (this.paused || this.retired) return Promise.reject(new DomainError('maintenance', '正在備份或還原，請稍候再操作。'));
     const result = this.tail.then(work);
     this.tail = result.catch(() => undefined);
     return result;
+  }
+  // Stop new work synchronously, then drain ALL prior reads/writes. The
+  // callback owns this connection until it finishes; no nested store calls.
+  async maintenance<T>(work: (db: DatabasePort) => Promise<T>): Promise<T> {
+    if (this.paused || this.retired) throw new DomainError('maintenance', '資料操作正在進行，請稍候。');
+    this.paused = true;
+    try { await this.tail; return await work(this.db); }
+    finally { this.paused = false; this.emit(); }
   }
   private async atomic<T>(work: () => Promise<T>): Promise<T> {
     await this.db.exec('BEGIN IMMEDIATE');
@@ -65,7 +77,7 @@ export class OrderStore {
       let applyingNoticeMigration = false;
       await this.atomic(async () => {
         for (const migration of MIGRATIONS) if (migration.version > version) {
-          if (migration.version >= 3) applyingNoticeMigration = true;
+          applyingNoticeMigration = migration.version >= 3 && migration.version <= 5;
           if (migration.prepare) await migration.prepare(this.db);
           if (migration.sql.trim()) await this.db.exec(migration.sql);
           await this.db.exec(`PRAGMA user_version=${migration.version}`);

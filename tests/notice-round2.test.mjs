@@ -172,7 +172,7 @@ test('disk SQLite: incomplete/full v3/v4 -> v5 commits, closes/reopens, and bind
       db=new DatabaseSync(path);
       try {
         const store=new OrderStore(port(db),()=> 'unused'); await store.initialize();
-        assert.deepEqual(await noticeSchemaDiagnostic(port(db)),{schemaVersion:5,missingColumns:[]});
+        assert.deepEqual(await noticeSchemaDiagnostic(port(db)),{schemaVersion:SCHEMA_VERSION,missingColumns:[]});
         const current=await store.getNoticeContext('synthetic-order'); assert.equal(current.preferences.template,'soft'); assert.equal(current.preferences.revision,3);
         await store.saveNoticePreferences('synthetic-order',1,3,{template:'editorial',includeNote:false}); assert.deepEqual(rows(db),before);
         assert.deepEqual(readFileSync(pngPath),priorBytes);
@@ -263,7 +263,7 @@ test('v5 ALTER failure rolls back v4 data and version, and a later retry repairs
     assert.equal(db.prepare('PRAGMA user_version').get().user_version,4); assert.deepEqual(rows(db),before);
     assert.equal(db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name='synthetic_partial_v5'").get().n,0);
     adapter.exec=exec; await store.initialize();
-    assert.equal(db.prepare('PRAGMA user_version').get().user_version,5); assert.deepEqual(rows(db),before);
+    assert.equal(db.prepare('PRAGMA user_version').get().user_version,SCHEMA_VERSION); assert.deepEqual(rows(db),before);
     const context=await store.getNoticeContext('synthetic-order');
     assert.equal(context.preferences.includeNote,true); assert.equal(context.preferences.noteSnapshot,'');
     assert.throws(()=>buildNotice(context),/重新確認/);
