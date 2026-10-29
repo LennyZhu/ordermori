@@ -9,6 +9,7 @@ import type { Action, Order, OrderDetail } from '../../src/domain/model';
 import { Button, ErrorNotice, Loading, color, dateText, s, shippingText, statusText } from '../../src/ui/common';
 import { ActionButton, AmountRow, CompactField, OrderStates, SectionHeading, TextAction, e } from '../../src/ui/editorial';
 import { OrderPaymentSection } from '../../src/ui/OrderPaymentSection';
+import { noticeStateReason } from '../../src/domain/notice';
 
 function actionTitle(action: Action, order: Order) {
   return { mark_paid: '手動確認已收款', correct_payment: '糾正誤標付款', fulfill: order.shipping_method === 'pickup' ? '登記已交付' : '登記已發貨', refund: '登記整單退款', cancel: '取消訂單' }[action];
@@ -91,6 +92,7 @@ export default function OrderDetailScreen() {
         </View>
       </View>
       <OrderPaymentSection value={data.payment} readOnly />
+      <ActionButton title={noticeStateReason(order) ? '歷史付款通知' : '付款通知'} icon="document-text-outline" secondary onPress={() => router.push({ pathname: '/order/notice/[id]', params: { id } })} />
       {actions.length > 0 && <View style={{ gap: 10 }}><SectionHeading title="跟進訂單" />
         <Text style={e.caption}>手動登記事實；App 不核實到帳、不寄貨，亦不執行退款。</Text>
         {primaryAction && <ActionButton title={actionTitle(primaryAction, order)} icon={primaryAction === 'mark_paid' ? 'checkmark-circle-outline' : 'cube-outline'} onPress={() => openAction(primaryAction)} />}

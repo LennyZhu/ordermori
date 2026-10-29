@@ -1,7 +1,11 @@
 import { PAYMENT_MIGRATION } from './paymentMigration.ts';
+import { NOTICE_MIGRATION } from './noticeMigration.ts';
+import { NOTICE_COMPATIBILITY_MIGRATION, NOTICE_SCHEMA_REPAIR_MIGRATION } from './noticeCompatibility.ts';
+import type { SchemaPort } from './noticeCompatibility.ts';
 
-export const SCHEMA_VERSION = 2;
-export const MIGRATIONS = [{ version: 1, sql: `
+export const SCHEMA_VERSION = 5;
+interface Migration { version: number; sql: string; prepare?: (db: SchemaPort) => Promise<void> }
+export const MIGRATIONS: Migration[] = [{ version: 1, sql: `
 CREATE TABLE shops (
  id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL
 );
@@ -85,4 +89,4 @@ CREATE TRIGGER locked_items_update BEFORE UPDATE ON order_items
 CREATE TRIGGER locked_items_delete BEFORE DELETE ON order_items
  WHEN EXISTS(SELECT 1 FROM orders WHERE id=OLD.order_id AND (financial_locked_at IS NOT NULL OR order_status='cancelled' OR payment_status='refunded'))
  BEGIN SELECT RAISE(ABORT,'items are locked'); END;
-` }, PAYMENT_MIGRATION];
+` }, PAYMENT_MIGRATION, NOTICE_MIGRATION, NOTICE_COMPATIBILITY_MIGRATION, NOTICE_SCHEMA_REPAIR_MIGRATION];
