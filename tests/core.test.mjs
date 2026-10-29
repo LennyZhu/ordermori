@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { OrderStore } from '../src/data/store.ts';
 import { blankInput, evaluate, parseCents, editable, toInput } from '../src/domain/model.ts';
 import { hasDraftInput } from '../src/ui/home.ts';
+import { SCHEMA_VERSION } from '../src/data/migrations.ts';
 
 function fixture(shipping = 'custom') {
   return { buyer: '@test_buyer', items: [
@@ -94,7 +95,7 @@ test('migration, physical persistence, incomplete draft, sequence ordering and t
   try {
     const path = join(dir, 'orders.sqlite');
     instance = await setup(path);
-    assert.equal(instance.db.prepare('PRAGMA user_version').get().user_version, 1);
+    assert.equal(instance.db.prepare('PRAGMA user_version').get().user_version, SCHEMA_VERSION);
     const draft = await instance.store.openDraft();
     const input = { ...blankInput('x'), note: '仍未填完', buyer: '' };
     await instance.store.saveDraft(draft.requestId, 3, input);

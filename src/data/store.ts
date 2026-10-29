@@ -1,6 +1,8 @@
 import { MIGRATIONS, SCHEMA_VERSION } from './migrations.ts';
 import { DomainError, FREE_LIMIT, blankInput, countChars, editable, evaluate, transition } from '../domain/model.ts';
 import type { Action, Draft, Filter, History, HomeData, Order, OrderDetail, OrderInput, OrderItem, Shop } from '../domain/model.ts';
+import { isPaymentKind, normalizePayment, paymentStatus, snapshotOf } from '../domain/payment.ts';
+import type { PaymentAsset, PaymentChoice, PaymentInput, PaymentKind, PaymentMethod, PaymentSettings, PaymentSnapshot, QrState } from '../domain/payment.ts';
 
 type Binding = string | number | null;
 export interface DatabasePort {
@@ -11,6 +13,8 @@ export interface DatabasePort {
 }
 interface State { active_shop_id: string; created_count: number; order_number_seq: number }
 interface DraftRow { shop_id: string; request_id: string; edit_seq: number; payload: string; is_active: number }
+interface PaymentRow { id: string; shop_id: string; kind: PaymentKind; payload: string; revision: number; updated_at: string }
+interface AssetRow { id: string; shop_id: string; kind: 'fps' | 'payme'; relative_path: string; mime: PaymentAsset['mime']; byte_count: number; sha256: string; width: number; height: number }
 
 export class OrderStore {
   private tail: Promise<unknown> = Promise.resolve();
@@ -18,8 +22,10 @@ export class OrderStore {
   private db: DatabasePort;
   private newId: () => string;
   private now: () => string;
-  constructor(db: DatabasePort, newId: () => string, now: () => string = () => new Date().toISOString()) {
+  private verifyAsset: (asset: PaymentAsset) => Promise<QrState>;
+  constructor(db: DatabasePort, newId: () => string, now: () => string = () => new Date().toISOString(), verifyAsset: (asset: PaymentAsset) => Promise<QrState> = async () => 'missing') {
     this.db = db; this.newId = newId; this.now = now;
+    this.verifyAsset = verifyAsset;
   }
   subscribe(listener: () => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
   private emit() { this.listeners.forEach((listener) => listener()); }
@@ -80,6 +86,99 @@ export class OrderStore {
       this.emit();
     });
   }
+  private paymentFromRow(row: PaymentRow): PaymentSnapshot {
+    const payload = JSON.parse(row.payload) as PaymentInput & { confirmedAt: string | null };
+    return { ...normalizePayment(row.kind, payload), version: 1, methodId: row.id, shopId: row.shop_id, kind: row.kind,
+      revision: row.revision, confirmedAt: payload.confirmedAt };
+  }
+  private async assetById(id: string, shopId: string, kind: PaymentKind): Promise<PaymentAsset | null> {
+    const row = await this.db.first<AssetRow>('SELECT * FROM payment_assets WHERE id=? AND shop_id=? AND kind=?', [id, shopId, kind]);
+    return row ? { id: row.id, shopId: row.shop_id, kind: row.kind, relativePath: row.relative_path, mime: row.mime,
+      bytes: row.byte_count, sha256: row.sha256, width: row.width, height: row.height } : null;
+  }
+  private async paymentChoice(snapshot: PaymentSnapshot): Promise<PaymentChoice> {
+    const asset = snapshot.qrAssetId ? await this.assetById(snapshot.qrAssetId, snapshot.shopId, snapshot.kind) : null;
+    let qrState: QrState = snapshot.qrAssetId ? 'missing' : 'none';
+    if (asset) { try { qrState = await this.verifyAsset(asset); } catch { qrState = 'invalid'; } }
+    return { snapshot, asset, qrState, status: paymentStatus(snapshot.kind, snapshot, qrState) };
+  }
+  async getPaymentSettings(): Promise<PaymentSettings> {
+    return this.enqueue(async () => {
+      const state = await this.state();
+      const rows = await this.db.all<PaymentRow>('SELECT * FROM payment_methods WHERE shop_id=? ORDER BY kind', [state.active_shop_id]);
+      const methods: PaymentMethod[] = [];
+      for (const row of rows) {
+        const choice = await this.paymentChoice(this.paymentFromRow(row));
+        methods.push({ ...choice.snapshot, updatedAt: row.updated_at, qrState: choice.qrState, status: choice.status });
+      }
+      const defaultRow = await this.db.first<{ method_id: string }>('SELECT method_id FROM shop_payment_defaults WHERE shop_id=?', [state.active_shop_id]);
+      return { methods, defaultMethodId: defaultRow?.method_id ?? null };
+    });
+  }
+  async registerPaymentAsset(asset: PaymentAsset) {
+    return this.enqueue(async () => {
+      const state = await this.state();
+      if (asset.shopId !== state.active_shop_id || !['fps', 'payme'].includes(asset.kind) ||
+        !/^payment-assets\/[a-f0-9-]{36}\.(png|jpg)$/.test(asset.relativePath) || !/^[a-f0-9]{64}$/.test(asset.sha256) ||
+        !['image/png', 'image/jpeg'].includes(asset.mime) || !Number.isSafeInteger(asset.bytes) || asset.bytes <= 0 || asset.bytes > 20 * 1024 * 1024 ||
+        !Number.isInteger(asset.width) || !Number.isInteger(asset.height) || asset.width <= 0 || asset.height <= 0 || Math.max(asset.width, asset.height) > 12000 || asset.width * asset.height > 40000000 ||
+        asset.relativePath !== `payment-assets/${asset.id}.${asset.mime === 'image/png' ? 'png' : 'jpg'}`) {
+        throw new DomainError('asset', '收款圖片資料不完整或不屬於這間店舖。');
+      }
+      if (await this.verifyAsset(asset) !== 'available') throw new DomainError('asset', '收款圖片未能完整保存，未變更原有設定。');
+      await this.db.run('INSERT INTO payment_assets(id,shop_id,kind,relative_path,mime,byte_count,sha256,width,height,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
+        [asset.id, asset.shopId, asset.kind, asset.relativePath, asset.mime, asset.bytes, asset.sha256, asset.width, asset.height, this.now()]);
+    });
+  }
+  async savePaymentMethod(kind: PaymentKind, input: PaymentInput, expectedRevision?: number | null) {
+    const value = normalizePayment(kind, input);
+    return this.enqueue(async () => {
+      await this.atomic(async () => {
+        const state = await this.state();
+        const old = await this.db.first<PaymentRow>('SELECT * FROM payment_methods WHERE shop_id=? AND kind=?', [state.active_shop_id, kind]);
+        if (expectedRevision !== undefined && (old?.revision ?? null) !== expectedRevision) throw new DomainError('conflict', '收款設定已更新，請返回列表重新開啟。');
+        if (value.qrAssetId && !await this.assetById(value.qrAssetId, state.active_shop_id, kind)) throw new DomainError('asset', '圖片不屬於此收款方式，未變更設定。');
+        const now = this.now();
+        await this.db.run(`INSERT INTO payment_methods(id,shop_id,kind,payload,qr_asset_id,revision,updated_at) VALUES(?,?,?,?,?,?,?)
+          ON CONFLICT(shop_id,kind) DO UPDATE SET payload=excluded.payload,qr_asset_id=excluded.qr_asset_id,revision=excluded.revision,updated_at=excluded.updated_at`,
+        [old?.id ?? this.newId(), state.active_shop_id, kind, JSON.stringify({ ...value, confirmedAt: value.confirmed ? now : null }), value.qrAssetId, (old?.revision ?? 0) + 1, now]);
+      });
+      this.emit();
+    });
+  }
+  async setDefaultPaymentMethod(methodId: string | null) {
+    return this.enqueue(async () => {
+      await this.atomic(async () => {
+        const state = await this.state();
+        if (methodId === null) { await this.db.run('DELETE FROM shop_payment_defaults WHERE shop_id=?', [state.active_shop_id]); return; }
+        const row = await this.db.first<PaymentRow>('SELECT * FROM payment_methods WHERE id=? AND shop_id=?', [methodId, state.active_shop_id]);
+        if (!row || (await this.paymentChoice(this.paymentFromRow(row))).status !== 'ready') throw new DomainError('payment', '請先完成並核對收款資料，再設為預設。');
+        await this.db.run('INSERT INTO shop_payment_defaults(shop_id,method_id) VALUES(?,?) ON CONFLICT(shop_id) DO UPDATE SET method_id=excluded.method_id', [state.active_shop_id, methodId]);
+      });
+      this.emit();
+    });
+  }
+  async inspectPayment(snapshot: PaymentSnapshot): Promise<PaymentChoice> {
+    return this.enqueue(async () => {
+      const state = await this.state();
+      if (snapshot.version !== 1 || snapshot.shopId !== state.active_shop_id || !isPaymentKind(snapshot.kind)) throw new DomainError('payment', '收款資料格式或店舖歸屬不一致，未覆寫原資料。');
+      return this.paymentChoice(snapshotOf(snapshot));
+    });
+  }
+  private async saveOrderPayment(orderId: string, shopId: string, selection: PaymentSnapshot | null | undefined) {
+    // Undefined is a legacy input: preserve its existing snapshot, if any.
+    if (selection === undefined) return;
+    if (selection === null) { await this.db.run('DELETE FROM order_payment_snapshots WHERE order_id=? AND shop_id=?', [orderId, shopId]); return; }
+    if (selection.version !== 1 || selection.shopId !== shopId || !isPaymentKind(selection.kind) || !Number.isSafeInteger(selection.revision) || selection.revision < 1 ||
+      (selection.confirmed && (typeof selection.confirmedAt !== 'string' || !selection.confirmedAt))) throw new DomainError('payment', '所選收款資料不完整，請重新選擇。');
+    const method = await this.db.first<PaymentRow>('SELECT * FROM payment_methods WHERE id=? AND shop_id=? AND kind=?', [selection.methodId, shopId, selection.kind]);
+    if (!method || method.revision < selection.revision) throw new DomainError('payment', '找不到所選收款設定，請重新選擇。');
+    const snapshot = snapshotOf(selection);
+    if (snapshot.qrAssetId && !await this.assetById(snapshot.qrAssetId, shopId, snapshot.kind)) throw new DomainError('asset', '收款圖片歸屬不一致。');
+    await this.db.run(`INSERT INTO order_payment_snapshots(order_id,shop_id,kind,payload,qr_asset_id) VALUES(?,?,?,?,?)
+      ON CONFLICT(order_id) DO UPDATE SET kind=excluded.kind,payload=excluded.payload,qr_asset_id=excluded.qr_asset_id`,
+    [orderId, shopId, snapshot.kind, JSON.stringify(snapshot), snapshot.qrAssetId]);
+  }
   async getHome(search = '', filter: Filter = 'all'): Promise<HomeData> {
     return this.enqueue(async () => {
       const state = await this.state();
@@ -123,6 +222,9 @@ export class OrderStore {
       }
       if (state.created_count >= FREE_LIMIT) throw new DomainError('quota', 'Free 累計 10 張訂單已用完。Pro 購買尚未開放，已有訂單仍可管理。');
       const draft = { requestId: this.newId(), shopId: state.active_shop_id, editSeq: 0, input: blankInput(this.newId()) };
+      const defaultRow = await this.db.first<PaymentRow>('SELECT m.* FROM payment_methods m JOIN shop_payment_defaults d ON d.method_id=m.id AND d.shop_id=m.shop_id WHERE m.shop_id=?', [state.active_shop_id]);
+      const defaultChoice = defaultRow ? await this.paymentChoice(this.paymentFromRow(defaultRow)) : null;
+      draft.input.payment = defaultChoice?.status === 'ready' ? defaultChoice.snapshot : null;
       await this.db.run(`INSERT INTO drafts(id,shop_id,request_id,edit_seq,payload,is_active,updated_at) VALUES(1,?,?,0,?,1,?)
         ON CONFLICT(id) DO UPDATE SET shop_id=excluded.shop_id,request_id=excluded.request_id,edit_seq=0,payload=excluded.payload,is_active=1,updated_at=excluded.updated_at`,
       [draft.shopId, draft.requestId, JSON.stringify({ version: 1, input: draft.input }), this.now()]);
@@ -167,6 +269,7 @@ export class OrderStore {
         [orderId, shop.id, `OM-${String(ordinal).padStart(6, '0')}`, requestId, values.buyer, shop.name, shop.description,
           values.shippingMethod, values.subtotal, values.discount, values.shipping, values.total, values.note, now, now]);
         await this.insertItems(orderId, shop.id, values);
+        await this.saveOrderPayment(orderId, shop.id, input.payment);
         await this.db.run('INSERT INTO creation_ledger(event_id,order_id,allocated_number,created_at) VALUES(?,?,?,?)', [this.newId(), orderId, ordinal, now]);
         await this.db.run("INSERT INTO status_history(id,order_id,shop_id,axis,from_value,to_value,reason,recorded_at) VALUES(?,?,?,'order','draft','active','明確儲存建立訂單',?)", [this.newId(), orderId, shop.id, now]);
         await this.db.run('UPDATE app_state SET created_count=created_count+1,order_number_seq=? WHERE id=1', [ordinal]);
@@ -185,7 +288,8 @@ export class OrderStore {
   async getOrder(id: string): Promise<OrderDetail> {
     return this.enqueue(async () => {
       const order = await this.ownedOrder(id);
-      return { order, items: await this.db.all<OrderItem>('SELECT * FROM order_items WHERE order_id=? AND shop_id=? ORDER BY position', [id, order.shop_id]),
+      const payment = await this.db.first<{ payload: string }>('SELECT payload FROM order_payment_snapshots WHERE order_id=? AND shop_id=?', [id, order.shop_id]);
+      return { order, payment: payment ? JSON.parse(payment.payload) as PaymentSnapshot : null, items: await this.db.all<OrderItem>('SELECT * FROM order_items WHERE order_id=? AND shop_id=? ORDER BY position', [id, order.shop_id]),
         history: await this.db.all<History>('SELECT * FROM status_history WHERE order_id=? AND shop_id=? ORDER BY recorded_at,rowid', [id, order.shop_id]) };
     });
   }
@@ -200,6 +304,7 @@ export class OrderStore {
           [v.buyer, v.shippingMethod, v.subtotal, v.discount, v.shipping, v.total, v.note, this.now(), id]);
         await this.db.run('DELETE FROM order_items WHERE order_id=?', [id]);
         await this.insertItems(id, old.shop_id, v);
+        await this.saveOrderPayment(id, old.shop_id, input.payment);
       });
       this.emit();
     });

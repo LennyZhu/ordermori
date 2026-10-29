@@ -4,7 +4,7 @@ import type { OrderInput } from '../domain/model.ts';
 export function hasDraftInput(input: OrderInput | null): boolean {
   if (!input) return false;
   return Boolean(
-    input.buyer.trim() || input.note.trim() || input.discount.trim() ||
+    input.buyer.trim() || input.note.trim() || input.discount.trim() || input.paymentChosen ||
     input.shipping !== 'included' ||
     (input.shippingFee.trim() && input.shippingFee.trim() !== '0') ||
     input.items.some((item) => item.name.trim() || item.price.trim() || item.quantity.trim() !== '1')

@@ -1,3 +1,5 @@
+import type { PaymentSnapshot } from './payment.ts';
+
 export const FREE_LIMIT = 10;
 export const SHIPPING = ['included', 'sf_collect', 'pickup', 'custom'] as const;
 export type Shipping = typeof SHIPPING[number];
@@ -10,6 +12,7 @@ export type Filter = 'all' | 'unpaid' | 'fulfillment' | 'completed' | 'refunded'
 export interface FormItem { id: string; name: string; price: string; quantity: string }
 export interface OrderInput {
   buyer: string; items: FormItem[]; shipping: Shipping; shippingFee: string; discount: string; note: string;
+  payment?: PaymentSnapshot | null; paymentChosen?: boolean;
 }
 export interface Shop { id: string; name: string; description: string; updated_at: string }
 export interface Draft { requestId: string; shopId: string; editSeq: number; input: OrderInput }
@@ -31,7 +34,7 @@ export interface History {
   id: string; order_id: string; shop_id: string; axis: 'order' | 'payment' | 'fulfillment';
   from_value: string; to_value: string; reason: string; recorded_at: string;
 }
-export interface OrderDetail { order: Order; items: OrderItem[]; history: History[] }
+export interface OrderDetail { order: Order; items: OrderItem[]; history: History[]; payment: PaymentSnapshot | null }
 export interface HomeData {
   orders: Order[]; unpaid: number; fulfillment: number; createdCount: number; hasDraft: boolean; shop: Shop;
 }
@@ -143,6 +146,6 @@ export function toInput(detail: OrderDetail): OrderInput {
   const o = detail.order;
   const decimal = (cents: number) => `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`;
   return { buyer: o.buyer_identifier, shipping: o.shipping_method, shippingFee: decimal(o.shipping_cents),
-    discount: decimal(o.discount_cents), note: o.note,
+    discount: decimal(o.discount_cents), note: o.note, payment: detail.payment,
     items: detail.items.map((item) => ({ id: item.id, name: item.name_snapshot, price: decimal(item.unit_price_cents), quantity: String(item.quantity) })) };
 }

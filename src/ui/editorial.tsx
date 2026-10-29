@@ -18,11 +18,11 @@ export function TaskHeader({ options, navigation, back }: NativeStackHeaderProps
   const expanded = fontScale > 1.5;
   return <SafeAreaView edges={['top', 'left', 'right']} style={{ backgroundColor: color.bg }}>
     <View style={[e.navigation, { minHeight: Math.max(48, Math.ceil(24 * fontScale + 4)) }]}>
-      <View style={[e.navigationSide, expanded && { width: 44 }]}><Pressable accessibilityRole="button" accessibilityLabel="返回"
+      <View style={[e.navigationSide, expanded && { width: 44 }]}>{options.headerLeft?.({ tintColor: color.ink, canGoBack: !!back, backgroundColor: color.bg }) ?? <Pressable accessibilityRole="button" accessibilityLabel="返回"
         onPress={() => { if (navigation.canGoBack()) navigation.goBack(); else router.replace('/'); }}
         style={({ pressed }) => [e.iconButton, pressed && e.pressed]}>
         <Ionicons name="chevron-back" size={23} color={color.ink} />
-      </Pressable></View>
+      </Pressable>}</View>
       <Text accessibilityRole="header" style={e.navigationTitle}>{options.title ?? '訂單'}</Text>
       <View style={[e.navigationSide, { alignItems: 'flex-end' }, expanded && { width: 44 }]}>
         {!expanded && right}

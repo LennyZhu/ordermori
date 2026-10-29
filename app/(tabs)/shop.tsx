@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ComponentRef } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { useApp } from '../../src/AppProvider';
 import { FREE_LIMIT, errorMessage } from '../../src/domain/model';
 import { ErrorNotice, Loading, color, s } from '../../src/ui/common';
@@ -11,6 +12,7 @@ import { t } from '../../src/i18n';
 
 export default function ShopScreen() {
   const { store, version } = useApp();
+  const router = useRouter();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(true);
@@ -64,6 +66,12 @@ export default function ShopScreen() {
             <Text style={[e.caption, { color: color.green }]}>店舖資料已儲存在此 iPhone。</Text></View>}
         </View>
         {!!error && <ErrorNotice message={error} retry={save} />}
+        <View style={{ gap: 8 }}><SectionHeading title="收款資料" />
+          <Pressable accessibilityRole="button" accessibilityLabel="管理收款方式及官方二維碼" onPress={() => router.push('/shop/payments')}
+            style={({ pressed }) => [e.surface, e.inset, e.row, pressed && e.pressed]}>
+            <Ionicons name="wallet-outline" size={21} color={color.ink} /><View style={{ flex: 1, gap: 3 }}><Text style={e.fieldLabel}>收款方式與官方二維碼</Text><Text style={e.caption}>FPS、PayMe 及銀行轉帳</Text></View><Ionicons name="chevron-forward" size={16} color={color.muted} />
+          </Pressable>
+        </View>
         <View style={[e.surface, e.inset]}>
           <View style={[e.rowWrap, { justifyContent: 'space-between' }]}><Text style={e.sectionTitle}>Free</Text><Text style={e.numeric}>{count ?? '—'} / {FREE_LIMIT} 張</Text></View>
           <View style={e.divider} /><Text style={e.caption}>累計前 {FREE_LIMIT} 張真實訂單免費，取消及退款不退還額度。</Text>

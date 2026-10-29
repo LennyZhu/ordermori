@@ -11,6 +11,7 @@ import type { FormItem, OrderInput, Shipping } from '../domain/model';
 import { Button, ErrorNotice, Loading, color, s, shippingText } from './common';
 import { ActionButton, CompactField, SectionHeading, TextAction, e } from './editorial';
 import { visibleInputScrollOffset } from './focusScroll';
+import { OrderPaymentSection } from './OrderPaymentSection';
 
 function itemAmount(item: FormItem) {
   if (!item.price.trim()) return '待填單價';
@@ -261,6 +262,7 @@ export function OrderEditor({ orderId }: { orderId?: string }) {
             style={{ textAlign: 'right', fontVariant: ['tabular-nums'] }} onFocus={() => revealInput('discount')} onBlur={() => releaseInput('discount')} onChangeText={(value) => change({ ...form, discount: value }, 'discount')} />
         </View>
       </View>
+      <OrderPaymentSection value={form.payment} disabled={busy} onChange={(payment) => change({ ...form, payment, paymentChosen: true }, 'payment')} />
       <View style={f.section} onLayout={(event) => { sectionPositions.current.note = event.nativeEvent.layout.y; }}>
         <SectionHeading title="訂單備註（選填）" icon="document-text-outline" />
         <CompactField ref={(ref) => { inputs.current.note = ref; }} accessibilityLabel="訂單備註（選填）" value={form.note} editable={!busy} multiline
