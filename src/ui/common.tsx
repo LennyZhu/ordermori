@@ -1,3 +1,5 @@
+import { uiDate, tr, trMessage } from "../i18n";
+import { useLanguage } from "../i18n/react";
 import { forwardRef } from 'react';
 import type { ComponentRef, ReactNode } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -11,10 +13,11 @@ export const statusText: Record<string, string> = {
   draft: '草稿', active: '已建立', cancelled: '已取消', unpaid: '未付款', paid: '已付款', refunded: '已退款',
   pending: '待履約', shipped: '已發貨', handed_over: '已交付',
 };
-export const dateText = (text: string) => new Date(text).toLocaleString('zh-HK', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+export const dateText = (text: string) => uiDate(text, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 export function Button({ title, onPress, disabled = false, busy = false, secondary = false, danger = false }: {
   title: string; onPress: () => void; disabled?: boolean; busy?: boolean; secondary?: boolean; danger?: boolean;
 }) {
+  useLanguage();
   return <Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityState={{ disabled: disabled || busy, busy }}
     disabled={disabled || busy} onPress={onPress}
     style={({ pressed }) => [s.button, secondary && s.secondary, (disabled || busy || pressed) && { opacity: 0.55 }]}>
@@ -23,26 +26,31 @@ export function Button({ title, onPress, disabled = false, busy = false, seconda
   </Pressable>;
 }
 export const Field = forwardRef<ComponentRef<typeof TextInput>, TextInputProps & { label: string; error?: string }>(function Field({ label, error, style, ...props }, ref) {
+  useLanguage();
   const numeric = props.keyboardType === 'decimal-pad' || props.keyboardType === 'number-pad';
   return <View style={{ gap: 7 }}>
     <Text style={s.label}>{label}</Text>
     <TextInput ref={ref} accessibilityLabel={label} placeholderTextColor={color.muted}
       style={[s.input, numeric && { fontVariant: ['tabular-nums'], textAlign: 'right' }, props.multiline && { minHeight: 100, textAlignVertical: 'top' }, !!error && { borderColor: color.error }, style]} {...props} />
-    {!!error && <Text accessibilityRole="alert" style={s.error}>{error}</Text>}
+    {!!error && <Text accessibilityRole="alert" style={s.error}>{trMessage(error)}</Text>}
   </View>;
 });
 export function Block({ title, children }: { title: string; children: ReactNode }) {
+  useLanguage();
   return <View style={{ gap: 10 }}><Text style={s.section}>{title}</Text><View style={s.block}>{children}</View></View>;
 }
 export function ErrorNotice({ message, retry }: { message: string; retry?: () => void }) {
-  return <View style={s.notice}><Text accessibilityRole="alert" style={s.error}>{message}</Text>
-    {retry && <Button secondary title="重試" onPress={retry} />}</View>;
+  useLanguage();
+  return <View style={s.notice}><Text accessibilityRole="alert" style={s.error}>{trMessage(message)}</Text>
+    {retry && <Button secondary title={tr("重試")} onPress={retry} />}</View>;
 }
-export function Loading() { return <View style={s.loading}><ActivityIndicator size="large" color={color.ink} /><Text style={s.caption}>正在讀取本機資料…</Text></View>; }
+export function Loading() {
+  useLanguage(); return <View style={s.loading}><ActivityIndicator size="large" color={color.ink} /><Text style={s.caption}>{tr`正在讀取本機資料…`}</Text></View>; }
 export function StatusPills({ order }: { order: Order }) {
+  useLanguage();
   return <View style={s.pills}>{[order.order_status, order.payment_status, order.fulfillment_status].map((state, index) =>
     <View key={index} style={[s.pill, { backgroundColor: state === 'paid' ? '#EAF1ED' : state === 'unpaid' ? '#F5EFDF' : '#EFEEE9' }]}>
-      <Text style={[s.pillText, { color: state === 'paid' ? color.green : state === 'unpaid' ? color.amber : state === 'refunded' || state === 'cancelled' ? color.error : color.muted }]}>{statusText[state]}</Text>
+      <Text style={[s.pillText, { color: state === 'paid' ? color.green : state === 'unpaid' ? color.amber : state === 'refunded' || state === 'cancelled' ? color.error : color.muted }]}>{tr(statusText[state])}</Text>
     </View>)}</View>;
 }
 export const s = StyleSheet.create({

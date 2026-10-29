@@ -1,3 +1,4 @@
+import { tr } from '../i18n/index';
 import { Image, Platform } from 'react-native';
 import { Directory, File, FileMode, Paths } from 'expo-file-system';
 import { randomUUID } from 'expo-crypto';
@@ -151,7 +152,7 @@ export async function exportBackup(preview: BackupPreview) {
   const sharing = await import('expo-sharing');
   if (!await sharing.isAvailableAsync()) failBackup('系統檔案分享目前不可用，請稍後重試。');
   candidate.presented = true;
-  await sharing.shareAsync(file.uri,BACKUP_SHARE_OPTIONS);
+  await sharing.shareAsync(file.uri,{ ...BACKUP_SHARE_OPTIONS, dialogTitle: tr(BACKUP_SHARE_OPTIONS.dialogTitle) });
   return '系統面板已關閉。請確認你已選擇「儲存到檔案」並完成儲存；App 無法確認外部儲存結果。';
 }
 export async function restoreBackup(store: OrderStore, preview: BackupPreview) {

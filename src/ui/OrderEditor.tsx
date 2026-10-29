@@ -1,3 +1,5 @@
+import { tr, trMessage } from "../i18n";
+import { useLanguage } from "../i18n/react";
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ComponentRef } from 'react';
 import { Alert, AppState, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
@@ -17,12 +19,13 @@ import { appendCatalogProduct, productSlots } from '../domain/catalog';
 import type { CatalogProduct } from '../domain/catalog';
 
 function itemAmount(item: FormItem) {
-  if (!item.price.trim()) return '待填單價';
+  if (!item.price.trim()) return tr("待填單價");
   try { return money(evaluate({ ...blankInput(item.id), items: [item] }, false).subtotal); }
-  catch { return '待完善金額'; }
+  catch { return tr("待完善金額"); }
 }
 
 export function OrderEditor({ orderId }: { orderId?: string }) {
+  useLanguage();
   const { store } = useApp(); const router = useRouter(); const insets = useSafeAreaInsets();
   const { width, fontScale } = useWindowDimensions();
   const expandedFields = width - insets.left - insets.right - 40 < 340 || fontScale > 1.2;
@@ -163,24 +166,24 @@ export function OrderEditor({ orderId }: { orderId?: string }) {
     } finally { saving.current = false; if (alive.current) setBusy(false); }
   }
   function discard() {
-    Alert.alert('捨棄這份草稿？', '尚未建立正式訂單，不會消耗或退還任何額度。', [{ text: '保留草稿', style: 'cancel' }, {
-      text: '捨棄草稿', style: 'destructive', onPress: () => {
+    Alert.alert(tr("捨棄這份草稿？"), tr("尚未建立正式訂單，不會消耗或退還任何額度。"), [{ text: tr("保留草稿"), style: 'cancel' }, {
+      text: tr("捨棄草稿"), style: 'destructive', onPress: () => {
         closed.current = true; clearTimer(); setBusy(true);
         store.discardDraft(request.current).then(() => { if (router.canGoBack()) router.back(); else router.replace('/'); })
           .catch((cause: unknown) => { closed.current = false; setError(errorMessage(cause)); setBusy(false); });
       },
     }]);
   }
-  const draftLabel = !isNew ? '編輯中' : draftError ? '未暫存' : draftStatus === '草稿已儲存在此 iPhone' ? '已暫存' : draftStatus === '正在自動儲存…' ? '暫存中' : draftStatus === '草稿已關閉' ? '已關閉' : '讀取中';
+  const draftLabel = !isNew ? tr("編輯中") : draftError ? tr("未暫存") : draftStatus === '草稿已儲存在此 iPhone' ? tr("已暫存") : draftStatus === '正在自動儲存…' ? tr("暫存中") : draftStatus === '草稿已關閉' ? tr("已關閉") : tr("讀取中");
   const header = <Stack.Screen options={{ headerRight: () => <Text accessibilityLiveRegion="polite" style={[e.draftBadge, !!draftError && { color: color.error }]}>{draftLabel}</Text> }} />;
-  if (!form) return <>{header}{error ? <View style={s.content}><ErrorNotice message={error} retry={() => { setError(''); setRetry((v) => v + 1); }} /><Button title="返回訂單" secondary onPress={() => router.replace('/')} /></View> : <Loading />}</>;
+  if (!form) return <>{header}{error ? <View style={s.content}><ErrorNotice message={trMessage(error)} retry={() => { setError(''); setRetry((v) => v + 1); }} /><Button title={tr("返回訂單")} secondary onPress={() => router.replace('/')} /></View> : <Loading />}</>;
   let total: number | null = null;
   try { total = evaluate(form, false).total; } catch { /* Incomplete or invalid input is shown as a pending total. */ }
   const itemChange = (id: string, key: 'name' | 'price' | 'quantity', value: string) => change({ ...form, items: form.items.map((item) => item.id === id ? { ...item, [key]: value } : item) }, `item.${id}.${key}`);
   function switchShipping(shipping: Shipping) {
     const apply = () => change({ ...form!, shipping, shippingFee: shipping === 'custom' ? form!.shippingFee : '0' }, 'shippingFee');
     if (form!.shipping === 'custom' && shipping !== 'custom' && form!.shippingFee.trim() && !/^0+(?:\.0{1,2})?$/.test(form!.shippingFee.trim())) {
-      Alert.alert('清除商家運費？', '這個配送方式不向商家支付運費，原有運費會清零。', [{ text: '保留原設定', style: 'cancel' }, { text: '清零並切換', onPress: apply }]);
+      Alert.alert(tr("清除商家運費？"), tr("這個配送方式不向商家支付運費，原有運費會清零。"), [{ text: tr("保留原設定"), style: 'cancel' }, { text: tr("清零並切換"), onPress: apply }]);
     } else apply();
   }
   return <>{header}<View ref={frame} style={s.page} onLayout={() => frame.current?.measureInWindow((_x, y) => { if (alive.current) setKeyboardOffset(y); })}>
@@ -191,23 +194,23 @@ export function OrderEditor({ orderId }: { orderId?: string }) {
       scrollEventThrottle={16} onScroll={(event) => { scrollOffset.current = event.nativeEvent.contentOffset.y; }}
       onScrollBeginDrag={() => { dragging.current = true; visibilityRequest.current += 1; }} onScrollEndDrag={() => { dragging.current = false; }}
       onLayout={() => ensureFocusedInputVisible()} onContentSizeChange={() => ensureFocusedInputVisible()}>
-      {!!draftError && <ErrorNotice message={draftError} retry={() => { if (current.current) void persist(current.current, sequence.current); }} />}
-      {!!error && <ErrorNotice message={error} />}
+      {!!draftError && <ErrorNotice message={trMessage(draftError)} retry={() => { if (current.current) void persist(current.current, sequence.current); }} />}
+      {!!error && <ErrorNotice message={trMessage(error)} />}
       <View style={f.section} onLayout={(event) => { sectionPositions.current.buyer = event.nativeEvent.layout.y; }}>
-        <SectionHeading title="買家資料" />
-        <CompactField ref={(ref) => { inputs.current.buyer = ref; }} accessibilityLabel="買家標識（必填）"
-          leading={<Ionicons name="person-outline" size={18} color={color.ink} />} placeholder="IG 用戶名、稱呼或客戶代號"
+        <SectionHeading title={tr("買家資料")} />
+        <CompactField ref={(ref) => { inputs.current.buyer = ref; }} accessibilityLabel={tr("買家標識（必填）")}
+          leading={<Ionicons name="person-outline" size={18} color={color.ink} />} placeholder={tr("IG 用戶名、稱呼或客戶代號")}
           autoCapitalize="none" autoCorrect={false} value={form.buyer} editable={!busy} error={fields.buyer}
           onFocus={() => revealInput('buyer')} onBlur={() => releaseInput('buyer')} onChangeText={(value) => change({ ...form, buyer: value }, 'buyer')} />
       </View>
       <View style={f.section} onLayout={(event) => { sectionPositions.current.items = event.nativeEvent.layout.y; }}>
-        <SectionHeading title={`商品明細 · ${form.items.length}`} right={<TextAction title="加入商品" icon="add" disabled={busy || form.items.length >= 20}
+        <SectionHeading title={tr`商品明細 · ${form.items.length}`} right={<TextAction title={tr("加入商品")} icon="add" disabled={busy || form.items.length >= 20}
           onPress={() => change({ ...form, items: [...form.items, { id: randomUUID(), name: '', price: '', quantity: '1' }] }, 'items')} />} />
-        <View style={[e.row,{justifyContent:'flex-start'}]}><TextAction title="選擇常用商品" icon="star-outline" disabled={busy || productSlots(form)<=0} onPress={()=>{Keyboard.dismiss();setPickerOpen(true);}}/></View>
-        {!!fields.items && <Text accessibilityRole="alert" style={e.error}>{fields.items}</Text>}
+        <View style={[e.row,{justifyContent:'flex-start'}]}><TextAction title={tr("選擇常用商品")} icon="star-outline" disabled={busy || productSlots(form)<=0} onPress={()=>{Keyboard.dismiss();setPickerOpen(true);}}/></View>
+        {!!fields.items && <Text accessibilityRole="alert" style={e.error}>{trMessage(fields.items)}</Text>}
         <View style={e.surface}>
           {form.items.length === 0 && <View style={[e.inset, { alignItems: 'center', paddingVertical: 20 }]}>
-            <Ionicons name="bag-outline" size={26} color={color.muted} /><Text style={e.caption}>尚未加入商品，點按上方「加入商品」。</Text>
+            <Ionicons name="bag-outline" size={26} color={color.muted} /><Text style={e.caption}>{tr`尚未加入商品，點按上方「加入商品」。`}</Text>
           </View>}
           {form.items.map((item, index) => {
             const quantity = /^\d+$/.test(item.quantity.trim()) ? Number(item.quantity) : NaN;
@@ -218,81 +221,81 @@ export function OrderEditor({ orderId }: { orderId?: string }) {
               <View style={f.item}>
                 <View style={e.row}>
                   <Text style={e.caption}>{index + 1}.</Text>
-                  <TextInput ref={(ref) => { inputs.current[`item.${item.id}.name`] = ref; }} accessibilityLabel={`商品 ${index + 1} 名稱`}
-                    placeholder="輸入商品名稱" placeholderTextColor={color.muted} selectionColor={color.ink} value={item.name} editable={!busy} multiline submitBehavior="blurAndSubmit"
+                  <TextInput ref={(ref) => { inputs.current[`item.${item.id}.name`] = ref; }} accessibilityLabel={tr`商品 ${index + 1} 名稱`}
+                    placeholder={tr("輸入商品名稱")} placeholderTextColor={color.muted} selectionColor={color.ink} value={item.name} editable={!busy} multiline submitBehavior="blurAndSubmit"
                     style={f.itemName} onFocus={() => revealInput(`item.${item.id}.name`)} onBlur={() => releaseInput(`item.${item.id}.name`)} onChangeText={(value) => itemChange(item.id, 'name', value)} />
-                  <Pressable accessibilityRole="button" accessibilityLabel={`移除商品 ${index + 1}`} accessibilityState={{ disabled: busy }} disabled={busy}
+                  <Pressable accessibilityRole="button" accessibilityLabel={tr`移除商品 ${index + 1}`} accessibilityState={{ disabled: busy }} disabled={busy}
                     onPress={() => change({ ...form, items: form.items.filter((entry) => entry.id !== item.id) }, 'items')}
                     style={({ pressed }) => [e.iconButton, pressed && e.pressed]}><Ionicons name="trash-outline" size={17} color={color.muted} /></Pressable>
                 </View>
-                {!!fields[`item.${item.id}.name`] && <Text accessibilityRole="alert" style={e.error}>{fields[`item.${item.id}.name`]}</Text>}
+                {!!fields[`item.${item.id}.name`] && <Text accessibilityRole="alert" style={e.error}>{trMessage(fields[`item.${item.id}.name`])}</Text>}
                 {countChars(item.name) > 100 && <Text style={[e.caption, { textAlign: 'right' }]}>{countChars(item.name)} / 120</Text>}
                 <View style={[f.itemValues, itemFieldsExpanded && { flexWrap: 'wrap' }]}>
                   <View style={{ flex: 2, minWidth: 112 }}><CompactField ref={(ref) => { inputs.current[`item.${item.id}.price`] = ref; }}
-                    accessibilityLabel={`商品 ${index + 1} 單價（HK$）`} leading={<Text style={f.currency}>HK$</Text>}
-                    keyboardType="decimal-pad" placeholder="單價" value={item.price} editable={!busy}
+                    accessibilityLabel={tr`商品 ${index + 1} 單價（HK$）`} leading={<Text style={f.currency}>HK$</Text>}
+                    keyboardType="decimal-pad" placeholder={tr("單價")} value={item.price} editable={!busy}
                     style={{ textAlign: 'right', fontVariant: ['tabular-nums'] }} onFocus={() => revealInput(`item.${item.id}.price`)} onBlur={() => releaseInput(`item.${item.id}.price`)} onChangeText={(value) => itemChange(item.id, 'price', value)} /></View>
                   <View style={f.stepper}>
-                    <Pressable accessibilityRole="button" accessibilityLabel={`減少商品 ${index + 1} 數量`} disabled={busy || !validQuantity || quantity <= 1}
+                    <Pressable accessibilityRole="button" accessibilityLabel={tr`減少商品 ${index + 1} 數量`} disabled={busy || !validQuantity || quantity <= 1}
                       accessibilityState={{ disabled: busy || !validQuantity || quantity <= 1 }}
                       onPress={() => itemChange(item.id, 'quantity', String(quantity - 1))}
                       style={({ pressed }) => [e.iconButton, (pressed || busy || !validQuantity || quantity <= 1) && e.pressed]}><Ionicons name="remove" size={17} color={color.ink} /></Pressable>
-                    <TextInput ref={(ref) => { inputs.current[`item.${item.id}.quantity`] = ref; }} accessibilityLabel={`商品 ${index + 1} 數量`}
+                    <TextInput ref={(ref) => { inputs.current[`item.${item.id}.quantity`] = ref; }} accessibilityLabel={tr`商品 ${index + 1} 數量`}
                       keyboardType="number-pad" selectionColor={color.ink} value={item.quantity} editable={!busy} style={[f.quantity, { width: quantityWidth }]}
                       onFocus={() => revealInput(`item.${item.id}.quantity`)} onBlur={() => releaseInput(`item.${item.id}.quantity`)} onChangeText={(value) => itemChange(item.id, 'quantity', value)} />
-                    <Pressable accessibilityRole="button" accessibilityLabel={`增加商品 ${index + 1} 數量`} disabled={busy || !validQuantity || quantity >= 999}
+                    <Pressable accessibilityRole="button" accessibilityLabel={tr`增加商品 ${index + 1} 數量`} disabled={busy || !validQuantity || quantity >= 999}
                       accessibilityState={{ disabled: busy || !validQuantity || quantity >= 999 }}
                       onPress={() => itemChange(item.id, 'quantity', String(quantity + 1))}
                       style={({ pressed }) => [e.iconButton, (pressed || busy || !validQuantity || quantity >= 999) && e.pressed]}><Ionicons name="add" size={17} color={color.ink} /></Pressable>
                   </View>
                   <View style={[f.lineAmount, itemFieldsExpanded && { flexBasis: '100%', flexDirection: 'row', justifyContent: 'space-between' }]}>
-                    <Text style={f.currency}>行金額</Text><Text style={[e.numeric, { fontWeight: '500' }]}>{itemAmount(item)}</Text>
+                    <Text style={f.currency}>{tr`行金額`}</Text><Text style={[e.numeric, { fontWeight: '500' }]}>{itemAmount(item)}</Text>
                   </View>
                 </View>
-                {['price', 'quantity'].map((key) => fields[`item.${item.id}.${key}`] ? <Text key={key} accessibilityRole="alert" style={e.error}>{fields[`item.${item.id}.${key}`]}</Text> : null)}
+                {['price', 'quantity'].map((key) => fields[`item.${item.id}.${key}`] ? <Text key={key} accessibilityRole="alert" style={e.error}>{trMessage(fields[`item.${item.id}.${key}`])}</Text> : null)}
               </View>
             </View>;
           })}
         </View>
-        {form.items.length >= 20 && <Text style={e.caption}>每張訂單最多 20 項商品。</Text>}
+        {form.items.length >= 20 && <Text style={e.caption}>{tr`每張訂單最多 20 項商品。`}</Text>}
       </View>
       <View style={f.section} onLayout={(event) => { sectionPositions.current.shipping = event.nativeEvent.layout.y; }}>
-        <SectionHeading title="配送方式" icon="car-outline" />
+        <SectionHeading title={tr("配送方式")} icon="car-outline" />
         <View style={f.shippingGrid}>{SHIPPING.map((shipping) => <Pressable key={shipping} accessibilityRole="radio"
           accessibilityState={{ checked: form.shipping === shipping, disabled: busy }} disabled={busy} onPress={() => switchShipping(shipping)}
           style={({ pressed }) => [f.shippingOption, form.shipping === shipping && f.shippingSelected, pressed && e.pressed]}>
           <Ionicons name={form.shipping === shipping ? 'checkmark-circle' : shipping === 'pickup' ? 'person-outline' : shipping === 'custom' ? 'create-outline' : 'cube-outline'} size={20} color={color.ink} />
-          <View style={{ flex: 1, minWidth: 0, gap: 2 }}><Text style={f.shippingName}>{shippingText[shipping]}</Text>
-            <Text style={f.currency}>{shipping === 'sf_collect' ? '買家另付運費' : shipping === 'custom' ? '設定商家運費' : '商家運費 HK$0'}</Text></View>
+          <View style={{ flex: 1, minWidth: 0, gap: 2 }}><Text style={f.shippingName}>{tr(shippingText[shipping])}</Text>
+            <Text style={f.currency}>{shipping === 'sf_collect' ? tr("買家另付運費") : shipping === 'custom' ? tr("設定商家運費") : tr("商家運費 HK$0")}</Text></View>
         </Pressable>)}</View>
-        {form.shipping === 'sf_collect' && <Text style={e.caption}>運費由買家另付順豐；商品貨款仍需先付。</Text>}
-        {form.shipping === 'custom' && <CompactField ref={(ref) => { inputs.current.shippingFee = ref; }} label="商家收取運費（HK$）"
+        {form.shipping === 'sf_collect' && <Text style={e.caption}>{tr`運費由買家另付順豐；商品貨款仍需先付。`}</Text>}
+        {form.shipping === 'custom' && <CompactField ref={(ref) => { inputs.current.shippingFee = ref; }} label={tr("商家收取運費（HK$）")}
           keyboardType="decimal-pad" value={form.shippingFee} editable={!busy} error={fields.shippingFee} style={{ textAlign: 'right', fontVariant: ['tabular-nums'] }}
           onFocus={() => revealInput('shippingFee')} onBlur={() => releaseInput('shippingFee')} onChangeText={(value) => change({ ...form, shippingFee: value }, 'shippingFee')} />}
-        <View style={{ marginTop: 8, gap: 8 }}><SectionHeading title="整單固定折扣（選填）" icon="pricetag-outline" />
-          <CompactField ref={(ref) => { inputs.current.discount = ref; }} accessibilityLabel="整單固定折扣（HK$，選填）"
+        <View style={{ marginTop: 8, gap: 8 }}><SectionHeading title={tr("整單固定折扣（選填）")} icon="pricetag-outline" />
+          <CompactField ref={(ref) => { inputs.current.discount = ref; }} accessibilityLabel={tr("整單固定折扣（HK$，選填）")}
             leading={<Text style={e.caption}>HK$</Text>} keyboardType="decimal-pad" placeholder="0.00" value={form.discount} editable={!busy} error={fields.discount}
             style={{ textAlign: 'right', fontVariant: ['tabular-nums'] }} onFocus={() => revealInput('discount')} onBlur={() => releaseInput('discount')} onChangeText={(value) => change({ ...form, discount: value }, 'discount')} />
         </View>
       </View>
       <OrderPaymentSection value={form.payment} disabled={busy} onChange={(payment) => change({ ...form, payment, paymentChosen: true }, 'payment')} />
       <View style={f.section} onLayout={(event) => { sectionPositions.current.note = event.nativeEvent.layout.y; }}>
-        <SectionHeading title="訂單備註（選填）" icon="document-text-outline" />
-        <CompactField ref={(ref) => { inputs.current.note = ref; }} accessibilityLabel="訂單備註（選填）" value={form.note} editable={!busy} multiline
-          error={fields.note} placeholder="例如：顏色、尺寸或交付安排" onFocus={() => revealInput('note')} onBlur={() => releaseInput('note')} onChangeText={(value) => change({ ...form, note: value }, 'note')} />
+        <SectionHeading title={tr("訂單備註（選填）")} icon="document-text-outline" />
+        <CompactField ref={(ref) => { inputs.current.note = ref; }} accessibilityLabel={tr("訂單備註（選填）")} value={form.note} editable={!busy} multiline
+          error={fields.note} placeholder={tr("例如：顏色、尺寸或交付安排")} onFocus={() => revealInput('note')} onBlur={() => releaseInput('note')} onChangeText={(value) => change({ ...form, note: value }, 'note')} />
         {!!form.note && <Text style={[e.caption, { textAlign: 'right' }]}>{countChars(form.note)} / 500</Text>}
       </View>
-      <View style={{ gap: 4 }}><Text style={e.caption}>{isNew ? '儲存成功才計入 Free 額度。' : '儲存修改不會建立新單或再扣額度。'}本頁不代表已收款。</Text>
-        {isNew && <View style={{ alignSelf: 'center' }}><TextAction title="捨棄草稿" danger disabled={busy} onPress={discard} /></View>}
+      <View style={{ gap: 4 }}><Text style={e.caption}>{tr`${isNew ? tr("儲存成功才計入 Free 額度。") : tr("儲存修改不會建立新單或再扣額度。")}本頁不代表已收款。`}</Text>
+        {isNew && <View style={{ alignSelf: 'center' }}><TextAction title={tr("捨棄草稿")} danger disabled={busy} onPress={discard} /></View>}
       </View>
     </ScrollView>
     <View style={[f.footer, { paddingBottom: keyboardVisible ? 6 : Math.max(insets.bottom, 12) }]}>
-      {!!fields.total && <Text accessibilityRole="alert" style={e.error}>{fields.total}</Text>}
+      {!!fields.total && <Text accessibilityRole="alert" style={e.error}>{trMessage(fields.total)}</Text>}
       <View style={[f.footerRow, !keyboardVisible && expandedFields && { flexDirection: 'column', alignItems: 'stretch' }]}>
-        <View style={{ flex: keyboardVisible || !expandedFields ? 1 : undefined, minWidth: 0, gap: 2 }}><Text style={e.caption}>應付總額</Text>
-          <Text style={[e.numeric, f.footerTotal, { textAlign: 'left', fontSize: total === null || keyboardVisible ? 16 : 23 }]}>{total === null ? '待填寫有效金額' : money(total)}</Text></View>
-        {keyboardVisible ? <TextAction title="完成輸入" onPress={Keyboard.dismiss} /> :
-          <View style={{ maxWidth: '100%' }}><ActionButton title={isNew ? '儲存訂單' : '儲存修改'} icon="document-text-outline" busy={busy} onPress={save} /></View>}
+        <View style={{ flex: keyboardVisible || !expandedFields ? 1 : undefined, minWidth: 0, gap: 2 }}><Text style={e.caption}>{tr`應付總額`}</Text>
+          <Text style={[e.numeric, f.footerTotal, { textAlign: 'left', fontSize: total === null || keyboardVisible ? 16 : 23 }]}>{total === null ? tr("待填寫有效金額") : money(total)}</Text></View>
+        {keyboardVisible ? <TextAction title={tr("完成輸入")} onPress={Keyboard.dismiss} /> :
+          <View style={{ maxWidth: '100%' }}><ActionButton title={isNew ? tr("儲存訂單") : tr("儲存修改")} icon="document-text-outline" busy={busy} onPress={save} /></View>}
       </View>
     </View>
   </KeyboardAvoidingView>

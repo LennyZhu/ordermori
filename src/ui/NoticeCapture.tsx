@@ -1,3 +1,5 @@
+import { tr } from "../i18n";
+import { useLanguage } from "../i18n/react";
 import { Component, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Dimensions, PixelRatio, ScrollView, Text, View } from 'react-native';
 import type { ComponentRef, ReactNode } from 'react';
@@ -21,6 +23,7 @@ const frames = () => new Promise<void>((resolve) => requestAnimationFrame(() => 
 export function NoticeCapture({ document, width, prepare, onReady, onError }: {
   document: NoticeDocument; width: number; prepare: () => void; onReady: (result: NoticePreview) => void; onError: (error: Error) => void;
 }) {
+  useLanguage();
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null); const mounted = useRef(true); const started = useRef(false);
   const observation = useRef(0); const measured = useRef<NoticeSize | null>(null); const content = useRef<NoticeSize | null>(null);
   const footer = useRef({ top: 0, bottom: 0 }); const rows = useRef(new Map<string, { top: number; height: number }>()); const texts = useRef(new Set<string>());
@@ -72,8 +75,8 @@ export function NoticeCapture({ document, width, prepare, onReady, onError }: {
         stage = 'temp-file';
         if (!candidate.startsWith('file://')) candidate = `file://${candidate}`;
         const scale = 1080 / doc.width;
-        const regions = document.items.map((item, n) => { const row = rows.current.get(item.id)!; return { label: `第 ${n + 1} 項商品`, top: (row.top + 2) * scale, bottom: (row.top + row.height - 2) * scale }; });
-        regions.push({ label: '付款說明及頁尾', top: (footer.current.top + 4) * scale, bottom: (footer.current.bottom - 2) * scale });
+        const regions = document.items.map((item, n) => { const row = rows.current.get(item.id)!; return { label: tr`第 ${n + 1} 項商品`, top: (row.top + 2) * scale, bottom: (row.top + row.height - 2) * scale }; });
+        regions.push({ label: tr("付款說明及頁尾"), top: (footer.current.top + 4) * scale, bottom: (footer.current.bottom - 2) * scale });
         stage = 'png-validation'; const actual = await inspectNoticePng(candidate, regions);
         stage = 'layout';
         if (!mounted.current || version !== observation.current || AppState.currentState !== 'active') throw new DomainError('render', '產生期間頁面或佈局改變，已丟棄結果。');
@@ -88,7 +91,7 @@ export function NoticeCapture({ document, width, prepare, onReady, onError }: {
     <ScrollView ref={scroll} collapsable={false} nestedScrollEnabled removeClippedSubviews={false} automaticallyAdjustContentInsets={false} contentInsetAdjustmentBehavior="never"
       onContentSizeChange={(w, h) => { if (content.current?.width !== w || content.current?.height !== h) { content.current = { width: w, height: h }; observation.current++; setSignals((n) => n + 1); } }}>
       <NoticeRenderBoundary template={document.template} onError={onError}><NoticePaper document={document} width={width} observe={observe} /></NoticeRenderBoundary>
-    </ScrollView><Text style={[e.caption, { padding: 8 }]}>正在準備圖片預覽，請保持此頁開啟。</Text>
+    </ScrollView><Text style={[e.caption, { padding: 8 }]}>{tr`正在準備圖片預覽，請保持此頁開啟。`}</Text>
   </View>;
 }
 
@@ -96,5 +99,5 @@ class NoticeRenderBoundary extends Component<{ template: NoticeTemplate; childre
   state = { failed: false };
   static getDerivedStateFromError() { return { failed: true }; }
   componentDidCatch(error: Error) { this.props.onError(noticeFailure('template-render', this.props.template, error)); }
-  render() { return this.state.failed ? <Text style={[e.error, { padding: 20 }]}>此模板未能繪製，請重試預覽。</Text> : this.props.children; }
+  render() { return this.state.failed ? <Text style={[e.error, { padding: 20 }]}>{tr`此模板未能繪製，請重試預覽。`}</Text> : this.props.children; }
 }

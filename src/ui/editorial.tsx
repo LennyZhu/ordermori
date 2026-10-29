@@ -1,3 +1,5 @@
+import { tr, trMessage } from "../i18n";
+import { useLanguage } from "../i18n/react";
 import { forwardRef, useState } from 'react';
 import type { ComponentProps, ComponentRef, ReactNode } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
@@ -12,18 +14,19 @@ import { color, tokens } from './theme';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
 export function TaskHeader({ options, navigation, back }: NativeStackHeaderProps) {
+  useLanguage();
   const router = useRouter();
   const { fontScale } = useWindowDimensions();
   const right = options.headerRight?.({ tintColor: color.ink, canGoBack: !!back, backgroundColor: color.bg });
   const expanded = fontScale > 1.5;
   return <SafeAreaView edges={['top', 'left', 'right']} style={{ backgroundColor: color.bg }}>
     <View style={[e.navigation, { minHeight: Math.max(48, Math.ceil(24 * fontScale + 4)) }]}>
-      <View style={[e.navigationSide, expanded && { width: 44 }]}>{options.headerLeft?.({ tintColor: color.ink, canGoBack: !!back, backgroundColor: color.bg }) ?? <Pressable accessibilityRole="button" accessibilityLabel="返回"
+      <View style={[e.navigationSide, expanded && { width: 44 }]}>{options.headerLeft?.({ tintColor: color.ink, canGoBack: !!back, backgroundColor: color.bg }) ?? <Pressable accessibilityRole="button" accessibilityLabel={tr("返回")}
         onPress={() => { if (navigation.canGoBack()) navigation.goBack(); else router.replace('/'); }}
         style={({ pressed }) => [e.iconButton, pressed && e.pressed]}>
         <Ionicons name="chevron-back" size={23} color={color.ink} />
       </Pressable>}</View>
-      <Text accessibilityRole="header" style={e.navigationTitle}>{options.title ?? '訂單'}</Text>
+      <Text accessibilityRole="header" style={e.navigationTitle}>{options.title ?? tr("訂單")}</Text>
       <View style={[e.navigationSide, { alignItems: 'flex-end' }, expanded && { width: 44 }]}>
         {!expanded && right}
       </View>
@@ -33,6 +36,7 @@ export function TaskHeader({ options, navigation, back }: NativeStackHeaderProps
 }
 
 export function SectionHeading({ title, icon, right }: { title: string; icon?: IconName; right?: ReactNode }) {
+  useLanguage();
   return <View style={e.sectionHeading}>
     {icon && <Ionicons name={icon} size={17} color={color.ink} />}
     <Text accessibilityRole="header" style={[e.sectionTitle, { flex: 1 }]}>{title}</Text>{right}
@@ -42,6 +46,7 @@ export function SectionHeading({ title, icon, right }: { title: string; icon?: I
 export function TextAction({ title, icon, onPress, disabled = false, danger = false }: {
   title: string; icon?: IconName; onPress: () => void; disabled?: boolean; danger?: boolean;
 }) {
+  useLanguage();
   return <Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityState={{ disabled }} disabled={disabled}
     onPress={onPress} style={({ pressed }) => [e.textAction, (pressed || disabled) && e.pressed]}>
     {icon && <Ionicons name={icon} size={17} color={danger ? color.error : color.ink} />}
@@ -52,6 +57,7 @@ export function TextAction({ title, icon, onPress, disabled = false, danger = fa
 export function ActionButton({ title, onPress, disabled = false, busy = false, secondary = false, danger = false, icon }: {
   title: string; onPress: () => void; disabled?: boolean; busy?: boolean; secondary?: boolean; danger?: boolean; icon?: IconName;
 }) {
+  useLanguage();
   const foreground = secondary ? (danger ? color.error : color.ink) : color.surface;
   return <Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityState={{ disabled: disabled || busy, busy }}
     disabled={disabled || busy} onPress={onPress} style={({ pressed }) => [e.button, secondary && e.secondaryButton,
@@ -64,6 +70,7 @@ export function ActionButton({ title, onPress, disabled = false, busy = false, s
 export const CompactField = forwardRef<ComponentRef<typeof TextInput>, TextInputProps & {
   label?: string; error?: string; leading?: ReactNode; trailing?: ReactNode;
 }>(function CompactField({ label, error, leading, trailing, style, onFocus, onBlur, ...props }, ref) {
+  useLanguage();
   const [focused, setFocused] = useState(false);
   return <View style={{ gap: 6 }}>
     {label && <Text style={e.fieldLabel}>{label}</Text>}
@@ -75,20 +82,22 @@ export const CompactField = forwardRef<ComponentRef<typeof TextInput>, TextInput
         style={[e.input, props.multiline && e.multiline, style]} {...props} />
       {trailing}
     </View>
-    {!!error && <Text accessibilityRole="alert" style={e.error}>{error}</Text>}
+    {!!error && <Text accessibilityRole="alert" style={e.error}>{trMessage(error)}</Text>}
   </View>;
 });
 
 export function AmountRow({ label, value, total = false }: { label: string; value: string; total?: boolean }) {
+  useLanguage();
   return <View style={e.amountRow}><Text style={[e.caption, total && e.totalLabel]}>{label}</Text>
     <Text style={[e.numeric, total && e.totalValue]}>{value}</Text></View>;
 }
 
 export function OrderStates({ order }: { order: Order }) {
+  useLanguage();
   return <View style={e.states}>{[order.order_status, order.payment_status, order.fulfillment_status].map((state, index) =>
-    <View key={index} accessibilityLabel={`${['訂單', '付款', '履約'][index]}：${statusText[state]}`}
+    <View key={index} accessibilityLabel={`${[tr("訂單"), tr("付款"), tr("履約")][index]}：${tr(statusText[state])}`}
       style={[e.state, { backgroundColor: state === 'paid' ? '#EAF1ED' : state === 'unpaid' ? '#F5EFDF' : color.mutedSurface }]}>
-      <Text style={[e.stateText, { color: state === 'paid' ? color.green : state === 'unpaid' ? color.amber : state === 'refunded' || state === 'cancelled' ? color.error : color.muted }]}>{statusText[state]}</Text>
+      <Text style={[e.stateText, { color: state === 'paid' ? color.green : state === 'unpaid' ? color.amber : state === 'refunded' || state === 'cancelled' ? color.error : color.muted }]}>{tr(statusText[state])}</Text>
     </View>)}</View>;
 }
 

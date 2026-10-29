@@ -1,3 +1,5 @@
+import { tr } from "../i18n";
+import { useLanguage } from "../i18n/react";
 import { useState } from 'react';
 import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -8,15 +10,16 @@ import { color, s } from './common';
 import { TextAction, e } from './editorial';
 
 export function PaymentQr({ asset, state, onInvalid, compact = false }: { asset: PaymentAsset; state: QrState; onInvalid: () => void; compact?: boolean }) {
+  useLanguage();
   const [preview, setPreview] = useState(false);
   const valid = state === 'available';
   return <View style={{ gap: 8 }}>
-    {valid && compact ? <TextAction title="查看已選官方圖片" icon="image-outline" onPress={() => setPreview(true)} /> : valid ? <Pressable accessibilityRole="button" accessibilityLabel="放大檢視上載的官方收款圖片" onPress={() => setPreview(true)}
+    {valid && compact ? <TextAction title={tr("查看已選官方圖片")} icon="image-outline" onPress={() => setPreview(true)} /> : valid ? <Pressable accessibilityRole="button" accessibilityLabel={tr("放大檢視上載的官方收款圖片")} onPress={() => setPreview(true)}
       style={[e.surface, { padding: 12, borderWidth: 1, borderColor: color.line, alignItems: 'center' }]}>
       <Image source={{ uri: paymentAssetUri(asset) }} resizeMode="contain" style={{ width: '100%', height: 220 }} onError={onInvalid} />
-      <Text style={e.caption}>點按放大 · 保留原圖比例</Text>
+      <Text style={e.caption}>{tr`點按放大 · 保留原圖比例`}</Text>
     </Pressable> : <View style={[e.surface, e.inset, e.row]}><Ionicons name="alert-circle-outline" size={20} color={color.error} />
-      <Text style={[e.error, { flex: 1 }]}>{state === 'missing' ? '找不到原收款圖片，請重新匯入。' : '圖片未能完整讀取，請重新匯入。'}</Text></View>}
+      <Text style={[e.error, { flex: 1 }]}>{state === 'missing' ? tr("找不到原收款圖片，請重新匯入。") : tr("圖片未能完整讀取，請重新匯入。")}</Text></View>}
     <Modal visible={preview && valid} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setPreview(false)}>
       {/* A native Modal has a separate view hierarchy from the app's provider. */}
       <SafeAreaProvider style={s.page}>
@@ -27,13 +30,14 @@ export function PaymentQr({ asset, state, onInvalid, compact = false }: { asset:
 }
 
 function PaymentQrPreview({ asset, onClose, onInvalid }: { asset: PaymentAsset; onClose: () => void; onInvalid: () => void }) {
+  useLanguage();
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
   return <SafeAreaView edges={['top', 'right', 'bottom', 'left']} style={s.page} accessibilityViewIsModal onAccessibilityEscape={onClose}>
     <View style={[e.row, previewStyle.navigation]}>
-      <Text accessibilityRole="header" numberOfLines={2} style={[e.sectionTitle, previewStyle.title]}>官方收款圖片</Text>
-      <Pressable accessibilityRole="button" accessibilityLabel="關閉官方收款圖片預覽" onPress={onClose}
+      <Text accessibilityRole="header" numberOfLines={2} style={[e.sectionTitle, previewStyle.title]}>{tr`官方收款圖片`}</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel={tr("關閉官方收款圖片預覽")} onPress={onClose}
         style={({ pressed }) => [e.textAction, previewStyle.close, pressed && e.pressed]}>
-        <Ionicons name="close" size={21} color={color.ink} /><Text style={e.actionText}>關閉</Text>
+        <Ionicons name="close" size={21} color={color.ink} /><Text style={e.actionText}>{tr`關閉`}</Text>
       </Pressable>
     </View>
     <View style={previewStyle.imageArea} onLayout={({ nativeEvent: { layout } }) => setViewport({ width: layout.width, height: layout.height })}>
@@ -43,7 +47,7 @@ function PaymentQrPreview({ asset, onClose, onInvalid }: { asset: PaymentAsset; 
           style={{ width: viewport.width, height: viewport.height }} onError={onInvalid} />}
       </ScrollView>
     </View>
-    <Text style={[e.caption, previewStyle.footer]}>請核對收款對象與留白。本 App 不驗證付款碼或實際到帳。</Text>
+    <Text style={[e.caption, previewStyle.footer]}>{tr`請核對收款對象與留白。本 App 不驗證付款碼或實際到帳。`}</Text>
   </SafeAreaView>;
 }
 

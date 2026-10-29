@@ -1,3 +1,5 @@
+import { tr, trMessage } from "./i18n";
+import { useLanguage } from "./i18n/react";
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { View, Text } from 'react-native';
@@ -10,6 +12,7 @@ import { Button, Loading, s } from './ui/common';
 
 const Context = createContext<{ store: OrderStore; version: number; restoreData: (preview: BackupPreview) => Promise<void>; restoreResult: string } | null>(null);
 export function AppProvider({ children }: { children: ReactNode }) {
+  useLanguage();
   const [store, setStore] = useState<OrderStore | null>(null);
   const [version, setVersion] = useState(0);
   const [attempt, setAttempt] = useState(0);
@@ -41,8 +44,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => { active = false; };
   }, [attempt]);
   useEffect(() => store?.subscribe(() => setVersion((value) => value + 1)), [store]);
-  if (restoring) return <View style={s.loading}><Text style={s.section}>正在安全還原…</Text><Text style={s.body}>請保持 App 開啟，完成後會重新載入資料。</Text></View>;
-  if (error) return <View style={[s.loading, { alignItems: 'stretch' }]}><Text style={s.section}>未能開啟本機資料</Text><Text style={s.body}>{error}</Text><Button title="重新嘗試" onPress={() => { setError(''); setAttempt((v) => v + 1); }} /></View>;
+  if (restoring) return <View style={s.loading}><Text style={s.section}>{tr`正在安全還原…`}</Text><Text style={s.body}>{tr`請保持 App 開啟，完成後會重新載入資料。`}</Text></View>;
+  if (error) return <View style={[s.loading, { alignItems: 'stretch' }]}><Text style={s.section}>{tr`未能開啟本機資料`}</Text><Text style={s.body}>{trMessage(error)}</Text><Button title={tr("重新嘗試")} onPress={() => { setError(''); setAttempt((v) => v + 1); }} /></View>;
   if (!store) return <Loading />;
   return <Context.Provider key={session} value={{ store, version, restoreData, restoreResult }}>{children}</Context.Provider>;
 }

@@ -1,3 +1,5 @@
+import { tr, trMessage } from "../../../src/i18n";
+import { useLanguage } from "../../../src/i18n/react";
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
@@ -13,6 +15,7 @@ import { PaymentQr } from '../../../src/ui/PaymentQr';
 import { usePaymentKeyboard } from '../../../src/ui/usePaymentKeyboard';
 
 export default function PaymentEditScreen() {
+  useLanguage();
   const { kind: param } = useLocalSearchParams<{ kind: string }>(); const router = useRouter(); const { store } = useApp();
   const kind = isPaymentKind(param) ? param : null;
   const [form, setForm] = useState<PaymentInput>(emptyPayment); const [asset, setAsset] = useState<PaymentAsset | null>(null);
@@ -36,7 +39,7 @@ export default function PaymentEditScreen() {
   function askBack() {
     if (busy) return;
     if (!dirty) { back(); return; }
-    Alert.alert('離開未儲存的設定？', '原有收款設定及訂單快照不會改變。', [{ text: '繼續編輯', style: 'cancel' }, { text: '捨棄修改', style: 'destructive', onPress: back }]);
+    Alert.alert(tr("離開未儲存的設定？"), tr("原有收款設定及訂單快照不會改變。"), [{ text: tr("繼續編輯"), style: 'cancel' }, { text: tr("捨棄修改"), style: 'destructive', onPress: back }]);
   }
   function change(value: Partial<PaymentInput>) { setForm((old) => ({ ...old, ...value, confirmed: false })); setDirty(true); setError(''); }
   async function importQr() {
@@ -51,12 +54,12 @@ export default function PaymentEditScreen() {
     finally { lock.current = false; if (alive.current) setBusy(false); }
   }
   function choose() {
-    Alert.alert('匯入官方收款圖片', '請選擇從官方支付工具取得、屬於本店的原圖。匯入圖片不代表 App 已驗證付款碼。',
-      [{ text: '取消', style: 'cancel' }, { text: '選擇官方原圖', onPress: () => { void importQr(); } }]);
+    Alert.alert(tr("匯入官方收款圖片"), tr("請選擇從官方支付工具取得、屬於本店的原圖。匯入圖片不代表 App 已驗證付款碼。"),
+      [{ text: tr("取消"), style: 'cancel' }, { text: tr("選擇官方原圖"), onPress: () => { void importQr(); } }]);
   }
   function remove() {
-    Alert.alert('移除此設定的收款圖片？', '儲存後會從目前設定移除。既有訂單引用的舊圖片仍會保留。', [{ text: '保留', style: 'cancel' }, {
-      text: '移除圖片', style: 'destructive', onPress: () => { setAsset(null); setQrState('none'); change({ qrAssetId: null }); },
+    Alert.alert(tr("移除此設定的收款圖片？"), tr("儲存後會從目前設定移除。既有訂單引用的舊圖片仍會保留。"), [{ text: tr("保留"), style: 'cancel' }, {
+      text: tr("移除圖片"), style: 'destructive', onPress: () => { setAsset(null); setQrState('none'); change({ qrAssetId: null }); },
     }]);
   }
   async function save() {
@@ -66,51 +69,51 @@ export default function PaymentEditScreen() {
     catch (cause) { if (alive.current) setError(errorMessage(cause)); }
     finally { lock.current = false; if (alive.current) setBusy(false); }
   }
-  const header = <Stack.Screen options={{ title: kind ? paymentName[kind] : '收款設定', gestureEnabled: !dirty && !busy,
-    headerLeft: () => <Pressable accessibilityRole="button" accessibilityLabel="返回收款方式" disabled={busy} onPress={askBack} style={e.iconButton}><Ionicons name="chevron-back" size={23} color={color.ink} /></Pressable>,
-    headerRight: () => dirty ? <Text style={e.draftBadge}>未儲存</Text> : null }} />;
-  if (!kind) return <>{header}<View style={e.content}><ErrorNotice message="找不到此收款方式。" /></View></>;
-  if (!loaded) return <>{header}{error ? <View style={e.content}><ErrorNotice message={error} retry={() => setRetry((v) => v + 1)} /></View> : <Loading />}</>;
+  const header = <Stack.Screen options={{ title: kind ? tr(paymentName[kind]) : tr("收款設定"), gestureEnabled: !dirty && !busy,
+    headerLeft: () => <Pressable accessibilityRole="button" accessibilityLabel={tr("返回收款方式")} disabled={busy} onPress={askBack} style={e.iconButton}><Ionicons name="chevron-back" size={23} color={color.ink} /></Pressable>,
+    headerRight: () => dirty ? <Text style={e.draftBadge}>{tr`未儲存`}</Text> : null }} />;
+  if (!kind) return <>{header}<View style={e.content}><ErrorNotice message={tr("找不到此收款方式。")} /></View></>;
+  if (!loaded) return <>{header}{error ? <View style={e.content}><ErrorNotice message={trMessage(error)} retry={() => setRetry((v) => v + 1)} /></View> : <Loading />}</>;
   const status = paymentStatus(kind, form, qrState);
   return <>{header}<View ref={frame} style={s.page} onLayout={measureFrame}>
     <KeyboardAvoidingView style={[s.page, { paddingLeft: insets.left, paddingRight: insets.right }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={keyboardOffset}>
       <ScrollView ref={scroll} {...scrollProps} contentContainerStyle={e.content}>
-        <View style={[e.rowWrap, { justifyContent: 'space-between' }]}><Text style={e.caption}>只儲存在這部裝置</Text><Text style={[e.fieldLabel, { color: status === 'ready' ? color.green : color.muted }]}>{paymentStatusText[status]}</Text></View>
-        {!!error && <ErrorNotice message={error} />}
-        {kind === 'fps' && <View style={{ gap: 12 }}><SectionHeading title="收款標識（選填一種）" />
+        <View style={[e.rowWrap, { justifyContent: 'space-between' }]}><Text style={e.caption}>{tr`只儲存在這部裝置`}</Text><Text style={[e.fieldLabel, { color: status === 'ready' ? color.green : color.muted }]}>{tr(paymentStatusText[status])}</Text></View>
+        {!!error && <ErrorNotice message={trMessage(error)} />}
+        {kind === 'fps' && <View style={{ gap: 12 }}><SectionHeading title={tr("收款標識（選填一種）")} />
           <View style={[e.rowWrap, { gap: 6 }]}>{(['id', 'phone', 'email'] as const).map((value) => <Pressable key={value} accessibilityRole="radio" accessibilityState={{ checked: form.fpsType === value, disabled: busy }} disabled={busy}
             onPress={() => { if (value !== form.fpsType) change({ fpsType: value, fpsValue: '' }); }} style={({ pressed }) => [{ paddingHorizontal: 14, paddingVertical: 11, minHeight: 44, borderRadius: 9, backgroundColor: form.fpsType === value ? color.ink : color.surface }, pressed && e.pressed]}>
-            <Text style={[e.actionText, { color: form.fpsType === value ? color.surface : color.ink }]}>{value === 'id' ? 'FPS ID' : value === 'phone' ? '電話' : '電郵'}</Text>
+            <Text style={[e.actionText, { color: form.fpsType === value ? color.surface : color.ink }]}>{value === 'id' ? 'FPS ID' : value === 'phone' ? tr("電話") : tr("電郵")}</Text>
           </Pressable>)}</View>
-          <CompactField {...field('fpsValue')} label={form.fpsType === 'id' ? 'FPS ID' : form.fpsType === 'phone' ? '已關聯 FPS 的電話' : '已關聯 FPS 的電郵'}
+          <CompactField {...field('fpsValue')} label={form.fpsType === 'id' ? 'FPS ID' : form.fpsType === 'phone' ? tr("已關聯 FPS 的電話") : tr("已關聯 FPS 的電郵")}
             value={form.fpsValue} editable={!busy} autoCapitalize="none" autoCorrect={false} keyboardType={form.fpsType === 'email' ? 'email-address' : form.fpsType === 'phone' ? 'phone-pad' : 'number-pad'} onChangeText={(value) => change({ fpsValue: value })} />
-          <Text style={e.caption}>{form.fpsType === 'id' ? 'FPS ID 為 7 或 9 位數字。' : ''}可填一種 FPS 標識，或只上載官方收款碼。</Text>
+          <Text style={e.caption}>{tr`${form.fpsType === 'id' ? tr("FPS ID 為 7 或 9 位數字。") : ''}可填一種 FPS 標識，或只上載官方收款碼。`}</Text>
         </View>}
-        {kind === 'bank' && <View style={{ gap: 14 }}><SectionHeading title="銀行收款資料" />
-          <CompactField {...field('bankName')} label="銀行名稱" value={form.bankName} editable={!busy} onChangeText={(value) => change({ bankName: value })} />
-          <CompactField {...field('accountName')} label="收款人姓名" value={form.accountName} editable={!busy} autoCorrect={false} onChangeText={(value) => change({ accountName: value })} />
-          <CompactField {...field('accountNumber')} label="銀行帳號" value={form.accountNumber} editable={!busy} keyboardType="numbers-and-punctuation" autoCorrect={false} onChangeText={(value) => change({ accountNumber: value })} />
+        {kind === 'bank' && <View style={{ gap: 14 }}><SectionHeading title={tr("銀行收款資料")} />
+          <CompactField {...field('bankName')} label={tr("銀行名稱")} value={form.bankName} editable={!busy} onChangeText={(value) => change({ bankName: value })} />
+          <CompactField {...field('accountName')} label={tr("收款人姓名")} value={form.accountName} editable={!busy} autoCorrect={false} onChangeText={(value) => change({ accountName: value })} />
+          <CompactField {...field('accountNumber')} label={tr("銀行帳號")} value={form.accountNumber} editable={!busy} keyboardType="numbers-and-punctuation" autoCorrect={false} onChangeText={(value) => change({ accountNumber: value })} />
         </View>}
-        {kind !== 'bank' && <View style={{ gap: 10 }}><SectionHeading title="官方收款二維碼" icon="image-outline" />
+        {kind !== 'bank' && <View style={{ gap: 10 }}><SectionHeading title={tr("官方收款二維碼")} icon="image-outline" />
           {asset ? <PaymentQr key={asset.id} asset={asset} state={qrState} onInvalid={() => setQrState('invalid')} /> :
-            <View style={[e.surface, e.inset, { alignItems: 'center', paddingVertical: 22 }]}><Ionicons name="image-outline" size={28} color={color.muted} /><Text style={e.caption}>尚未上載官方收款圖片</Text></View>}
-          {!!form.qrAssetId && !asset && <Text style={e.error}>圖片記錄缺失，請重新匯入或移除此設定的圖片。</Text>}
-          {form.qrAssetId ? <View style={[e.rowWrap, { justifyContent: 'space-between' }]}><TextAction title="替換官方碼" icon="swap-horizontal-outline" disabled={busy} onPress={choose} /><TextAction title="移除圖片" danger disabled={busy} onPress={remove} /></View> :
-            <ActionButton title="從照片匯入官方碼" icon="add" secondary disabled={busy} onPress={choose} />}
-          {busy && <Text accessibilityLiveRegion="polite" style={e.caption}>正在處理，請稍候…</Text>}
-          <Text style={e.caption}>PNG / JPEG · 最多 20 MB、4,000 萬像素 · 不裁剪或壓縮。{kind === 'payme' ? 'PayMe 只採用官方收款碼。' : ''}</Text>
+            <View style={[e.surface, e.inset, { alignItems: 'center', paddingVertical: 22 }]}><Ionicons name="image-outline" size={28} color={color.muted} /><Text style={e.caption}>{tr`尚未上載官方收款圖片`}</Text></View>}
+          {!!form.qrAssetId && !asset && <Text style={e.error}>{tr`圖片記錄缺失，請重新匯入或移除此設定的圖片。`}</Text>}
+          {form.qrAssetId ? <View style={[e.rowWrap, { justifyContent: 'space-between' }]}><TextAction title={tr("替換官方碼")} icon="swap-horizontal-outline" disabled={busy} onPress={choose} /><TextAction title={tr("移除圖片")} danger disabled={busy} onPress={remove} /></View> :
+            <ActionButton title={tr("從照片匯入官方碼")} icon="add" secondary disabled={busy} onPress={choose} />}
+          {busy && <Text accessibilityLiveRegion="polite" style={e.caption}>{tr`正在處理，請稍候…`}</Text>}
+          <Text style={e.caption}>{tr`PNG / JPEG · 最多 20 MB、4,000 萬像素 · 不裁剪或壓縮。${kind === 'payme' ? tr("PayMe 只採用官方收款碼。") : ''}`}</Text>
         </View>}
         <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: form.confirmed, disabled: busy }} disabled={busy}
           onPress={() => { setForm((old) => ({ ...old, confirmed: !old.confirmed })); setDirty(true); }} style={({ pressed }) => [e.row, { alignItems: 'flex-start', minHeight: 44, paddingVertical: 8 }, pressed && e.pressed]}>
           <Ionicons name={form.confirmed ? 'checkbox' : 'square-outline'} size={23} color={color.ink} />
-          <Text style={[e.body, { flex: 1 }]}>{kind === 'bank' ? '我已核對銀行、收款人及帳號屬於本店。' : '我已核對官方來源及收款對象；文字與圖片如同時提供，均屬於同一帳戶。'}</Text>
+          <Text style={[e.body, { flex: 1 }]}>{kind === 'bank' ? tr("我已核對銀行、收款人及帳號屬於本店。") : tr("我已核對官方來源及收款對象；文字與圖片如同時提供，均屬於同一帳戶。")}</Text>
         </Pressable>
-        <Text style={e.caption}>{kind !== 'bank' ? '官方碼可能含固定金額，請逐單核對。' : ''}App 不驗證帳戶或真實到帳。</Text>
-        {status !== 'ready' && <View style={{ gap: 4 }}>{paymentIssues(kind, form, qrState).map((issue) => <Text key={issue} style={e.caption}>{issue}</Text>)}</View>}
-        <Text style={e.caption}>可先儲存未完成設定；資料及商家確認未齊備前，不能設為預設或用於正式付款通知。既有訂單快照不變。</Text>
+        <Text style={e.caption}>{tr`${kind !== 'bank' ? tr("官方碼可能含固定金額，請逐單核對。") : ''}App 不驗證帳戶或真實到帳。`}</Text>
+        {status !== 'ready' && <View style={{ gap: 4 }}>{paymentIssues(kind, form, qrState).map((issue) => <Text key={trMessage(issue)} style={e.caption}>{trMessage(issue)}</Text>)}</View>}
+        <Text style={e.caption}>{tr`可先儲存未完成設定；資料及商家確認未齊備前，不能設為預設或用於正式付款通知。既有訂單快照不變。`}</Text>
       </ScrollView>
       <View style={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: keyboardVisible ? 6 : Math.max(insets.bottom, 12), borderTopWidth: 0.5, borderTopColor: color.line, backgroundColor: color.surface }}>
-        {keyboardVisible ? <TextAction title="完成輸入" onPress={Keyboard.dismiss} /> : <ActionButton title={status === 'ready' ? '儲存收款資料' : '儲存未完成設定'} busy={busy} onPress={() => { void save(); }} />}
+        {keyboardVisible ? <TextAction title={tr("完成輸入")} onPress={Keyboard.dismiss} /> : <ActionButton title={status === 'ready' ? tr("儲存收款資料") : tr("儲存未完成設定")} busy={busy} onPress={() => { void save(); }} />}
       </View>
     </KeyboardAvoidingView>
   </View></>;

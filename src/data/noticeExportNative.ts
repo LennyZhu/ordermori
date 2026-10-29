@@ -1,3 +1,4 @@
+import { tr } from '../i18n/index';
 import { AppState, Platform } from 'react-native';
 import { CryptoDigestAlgorithm, digestStringAsync } from 'expo-crypto';
 import { DomainError } from '../domain/model';
@@ -21,7 +22,7 @@ export function exportNativeNotice(store: OrderStore, file: NoticeFileRecord, ki
   const ports: NoticeExportPorts = {
     prepare: (record) => prepareNativeNoticeExport(store, record),
     sharingAvailable: async () => { sharingModule = await sharing(); return sharingModule.isAvailableAsync(); },
-    share: async (uri) => { if (!sharingModule) throw missingBuild(); await sharingModule.shareAsync(uri, { mimeType: 'image/png', UTI: 'public.png', dialogTitle: '分享付款通知' }); },
+    share: async (uri) => { if (!sharingModule) throw missingBuild(); await sharingModule.shareAsync(uri, { mimeType: 'image/png', UTI: 'public.png', dialogTitle: tr('分享付款通知') }); },
     photoPermission: async (request) => {
       const media = photosModule ??= await photos();
       // This is the SDK 58 next API export; true requests iOS add-only access.

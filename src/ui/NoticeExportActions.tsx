@@ -1,3 +1,5 @@
+import { tr, trMessage } from "../i18n";
+import { useLanguage } from "../i18n/react";
 import { useEffect, useRef, useState } from 'react';
 import { AppState, Linking, Text, View, useWindowDimensions } from 'react-native';
 import { useApp } from '../AppProvider';
@@ -10,6 +12,7 @@ import { ActionButton, TextAction, e } from './editorial';
 import { color } from './theme';
 
 export function NoticeExportActions({ store, file, onBusyChange }: { store: OrderStore; file: NoticeFileRecord; onBusyChange?: (busy: boolean) => void }) {
+  useLanguage();
   const { version } = useApp(); const { width, fontScale } = useWindowDimensions();
   const [qualification, setQualification] = useState<{ key: string; eligible: boolean; reason: string } | null>(null);
   const [busy, setBusy] = useState<NoticeExportKind | null>(null), [message, setMessage] = useState(''), [error, setError] = useState('');
@@ -35,14 +38,14 @@ export function NoticeExportActions({ store, file, onBusyChange }: { store: Orde
     finally { lock.current = false; busyCallback.current?.(false); if (alive.current) setBusy(null); }
   }
   return <View style={{ gap: 6 }}>
-    {checking ? <Text style={e.caption}>正在核對圖片及目前訂單…</Text> : !eligible ? <Text style={e.caption}>僅供歷史查看 · {reason}</Text> : <>
+    {checking ? <Text style={e.caption}>{tr`正在核對圖片及目前訂單…`}</Text> : !eligible ? <Text style={e.caption}>{tr`僅供歷史查看 · ${trMessage(reason)}`}</Text> : <>
       <View style={{ flexDirection: width < 370 || fontScale > 1.3 ? 'column' : 'row', gap: 10 }}>
-        <View style={{ flex: 1 }}><ActionButton title="分享圖片" icon="share-outline" busy={busy === 'share'} disabled={!!busy} onPress={() => { void run('share'); }} /></View>
-        <View style={{ flex: 1 }}><ActionButton title={albumSaved ? '已儲存至相簿' : '儲存至相簿'} icon="download-outline" secondary busy={busy === 'photos'} disabled={!!busy || albumSaved} onPress={() => { void run('photos'); }} /></View>
+        <View style={{ flex: 1 }}><ActionButton title={tr("分享圖片")} icon="share-outline" busy={busy === 'share'} disabled={!!busy} onPress={() => { void run('share'); }} /></View>
+        <View style={{ flex: 1 }}><ActionButton title={albumSaved ? tr("已儲存至相簿") : tr("儲存至相簿")} icon="download-outline" secondary busy={busy === 'photos'} disabled={!!busy || albumSaved} onPress={() => { void run('photos'); }} /></View>
       </View>
     </>}
-    {!!message && <Text accessibilityLiveRegion="polite" style={[e.caption, { color: message === '已儲存至相簿' ? color.green : color.muted }]}>{message}</Text>}
-    {!!error && <Text accessibilityRole="alert" style={e.error}>{error}</Text>}
-    {settings && <TextAction title="開啟系統設定" icon="open-outline" onPress={() => { void Linking.openSettings().catch(() => setError('未能開啟設定，請手動前往 iPhone 設定 → OrderMori → 相片。')); }} />}
+    {!!message && <Text accessibilityLiveRegion="polite" style={[e.caption, { color: message === '已儲存至相簿' ? color.green : color.muted }]}>{trMessage(message)}</Text>}
+    {!!error && <Text accessibilityRole="alert" style={e.error}>{trMessage(error)}</Text>}
+    {settings && <TextAction title={tr("開啟系統設定")} icon="open-outline" onPress={() => { void Linking.openSettings().catch(() => setError('未能開啟設定，請手動前往 iPhone 設定 → OrderMori → 相片。')); }} />}
   </View>;
 }

@@ -1,3 +1,4 @@
+import { useLanguage } from "../../src/i18n/react";
 import { Tabs } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { StyleSheet, useWindowDimensions } from 'react-native';
@@ -6,6 +7,7 @@ import { color } from '../../src/ui/common';
 import { t } from '../../src/i18n';
 
 export default function TabLayout() {
+  useLanguage();
   const insets = useSafeAreaInsets();
   const { fontScale } = useWindowDimensions();
   return <Tabs screenOptions={{ headerShown: false, tabBarActiveTintColor: color.ink, tabBarInactiveTintColor: color.muted,
