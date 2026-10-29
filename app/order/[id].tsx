@@ -9,6 +9,9 @@ import type { Action, Order, OrderDetail } from '../../src/domain/model';
 import { Button, ErrorNotice, Loading, color, dateText, s, shippingText, statusText } from '../../src/ui/common';
 import { ActionButton, AmountRow, CompactField, OrderStates, SectionHeading, TextAction, e } from '../../src/ui/editorial';
 import { OrderPaymentSection } from '../../src/ui/OrderPaymentSection';
+import { ProductEditorModal } from '../../src/ui/ProductEditorModal';
+import { productPriceInput } from '../../src/domain/catalog';
+import type { ProductInput } from '../../src/domain/catalog';
 import { noticeStateReason } from '../../src/domain/notice';
 
 function actionTitle(action: Action, order: Order) {
@@ -29,6 +32,7 @@ export default function OrderDetailScreen() {
   const [data, setData] = useState<OrderDetail | null>(null);
   const [error, setError] = useState(''); const [retry, setRetry] = useState(0);
   const [pending, setPending] = useState<{ action: Action; order: Order } | null>(null);
+  const [productSeed,setProductSeed] = useState<ProductInput | null>(null),[catalogMessage,setCatalogMessage] = useState('');
   const [reason, setReason] = useState(''); const [operationError, setOperationError] = useState('');
   const [busy, setBusy] = useState(false); const lock = useRef(false);
   useEffect(() => {
@@ -70,12 +74,13 @@ export default function OrderDetailScreen() {
         </View>
       </View>
       <View style={e.surface}>
-        <View style={[e.inset, { paddingBottom: 4 }]}><SectionHeading title={`商品明細 · ${data.items.length}`} /></View>
+        <View style={[e.inset, { paddingBottom: 4 }]}><SectionHeading title={`商品明細 · ${data.items.length}`} /><Text style={e.caption}>點按星號，將本單商品另存為常用商品。</Text>{!!catalogMessage && <Text accessibilityLiveRegion="polite" style={e.caption}>{catalogMessage}</Text>}</View>
         {data.items.map((item, index) => <View key={item.id}>
           {index > 0 && <View style={[e.divider, { marginHorizontal: 14 }]} />}
           <View style={d.itemRow}><View style={{ flex: 1, minWidth: 0, gap: 3 }}>
             <Text style={e.body}>{item.name_snapshot}</Text><Text style={e.caption}>{money(item.unit_price_cents)} × {item.quantity}</Text>
-          </View><Text style={[e.numeric, { maxWidth: '45%' }]}>{money(item.line_total_cents)}</Text></View>
+          </View><Text style={[e.numeric, { maxWidth: '35%' }]}>{money(item.line_total_cents)}</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel={`將 ${item.name_snapshot} 儲存為常用商品`} onPress={()=>{setCatalogMessage('');setProductSeed({name:item.name_snapshot,price:productPriceInput(item.unit_price_cents)});}} style={({pressed})=>[e.iconButton,pressed&&e.pressed]}><Ionicons name="star-outline" size={18} color={color.muted}/></Pressable></View>
         </View>)}
         <View style={e.divider} />
         <View style={[e.inset, { gap: 8 }]}>
@@ -117,6 +122,7 @@ export default function OrderDetailScreen() {
         </View>)}
       </View>
     </ScrollView>
+    {productSeed && <ProductEditorModal initial={productSeed} onClose={()=>setProductSeed(null)} onSaved={()=>{setProductSeed(null);setCatalogMessage('已另存為常用商品，原訂單保持不變。');}}/>}
     <Modal visible={!!pending} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => { if (!busy) setPending(null); }}>
       <SafeAreaView style={s.page}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>

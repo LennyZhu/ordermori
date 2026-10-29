@@ -1,4 +1,6 @@
 import { MIGRATIONS, SCHEMA_VERSION } from './migrations.ts';
+import { normalizeProduct } from '../domain/catalog.ts';
+import type { CatalogProduct, ProductInput } from '../domain/catalog.ts';
 import { DomainError, FREE_LIMIT, blankInput, countChars, editable, evaluate, transition } from '../domain/model.ts';
 import type { Action, Draft, Filter, History, HomeData, Order, OrderDetail, OrderInput, OrderItem, Shop } from '../domain/model.ts';
 import { isPaymentKind, normalizePayment, paymentStatus, snapshotOf } from '../domain/payment.ts';
@@ -94,6 +96,44 @@ export class OrderStore {
         throw noticeFailure(cause instanceof DomainError && cause.code === 'notice_schema' ? 'schema-check' : 'migration', null, cause, schema);
       });
     });
+  }
+  async listProducts(search = ''): Promise<CatalogProduct[]> {
+    return this.enqueue(async () => {
+      const state = await this.state();
+      return this.db.all<CatalogProduct>('SELECT * FROM catalog_products WHERE shop_id=? AND instr(lower(name),lower(?))>0 ORDER BY name COLLATE NOCASE,id', [state.active_shop_id,search.trim()]);
+    });
+  }
+  async getProduct(id: string, expectedRevision?: number): Promise<CatalogProduct> {
+    return this.enqueue(async () => {
+      const state = await this.state();
+      const product = await this.db.first<CatalogProduct>('SELECT * FROM catalog_products WHERE id=? AND shop_id=?',[id,state.active_shop_id]);
+      if (!product) throw new DomainError('product_missing','這件常用商品已移除，請重新選擇。');
+      if (expectedRevision !== undefined && product.revision !== expectedRevision) throw new DomainError('conflict','商品已更新，請核對最新名稱及單價後重新選擇。');
+      return product;
+    });
+  }
+  async saveProduct(input: ProductInput, existing?: { id:string; revision:number }, allowDuplicate = false): Promise<string> {
+    const value = normalizeProduct(input);
+    const id = await this.enqueue(() => this.atomic(async () => {
+      const state = await this.state();
+      const old = existing ? await this.db.first<CatalogProduct>('SELECT * FROM catalog_products WHERE id=? AND shop_id=?',[existing.id,state.active_shop_id]) : null;
+      if (existing && (!old || old.revision !== existing.revision)) throw new DomainError('conflict','商品已更新或移除，請重新開啟。你的輸入仍保留。');
+      const duplicate = await this.db.first('SELECT id FROM catalog_products WHERE shop_id=? AND lower(name)=lower(?) AND id!=?',[state.active_shop_id,value.name,existing?.id ?? '']);
+      if (duplicate && !allowDuplicate) throw new DomainError('product_duplicate','已有同名常用商品；你可以保留另一件，不會覆蓋原商品。');
+      const now = this.now(), productId = old?.id ?? this.newId();
+      if (old) await this.db.run('UPDATE catalog_products SET name=?,unit_price_cents=?,revision=revision+1,updated_at=? WHERE id=? AND shop_id=?',[value.name,value.cents,now,old.id,state.active_shop_id]);
+      else await this.db.run('INSERT INTO catalog_products(id,shop_id,name,unit_price_cents,revision,created_at,updated_at) VALUES(?,?,?,?,1,?,?)',[productId,state.active_shop_id,value.name,value.cents,now,now]);
+      return productId;
+    }));
+    this.emit(); return id;
+  }
+  async deleteProduct(id:string, expectedRevision:number) {
+    await this.enqueue(async () => {
+      const state = await this.state();
+      const result = await this.db.run('DELETE FROM catalog_products WHERE id=? AND shop_id=? AND revision=?',[id,state.active_shop_id,expectedRevision]);
+      if (!result.changes) throw new DomainError('conflict','商品已更新或移除，請重新開啟後再操作。');
+    });
+    this.emit();
   }
   async getShop() {
     return this.enqueue(async () => {

@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { OrderStore } from '../src/data/store.ts';
-import { MIGRATIONS } from '../src/data/migrations.ts';
+import { MIGRATIONS, SCHEMA_VERSION } from '../src/data/migrations.ts';
 import { blankInput } from '../src/domain/model.ts';
 import { emptyPayment, snapshotOf } from '../src/domain/payment.ts';
 import { checkSchema, readBackupData, replaceData } from '../src/backup/data.ts';
@@ -30,10 +30,10 @@ async function historical(path=':memory:',brokenV4=false){
   const store=new OrderStore(port(db),randomUUID,()=> '2026-01-01T00:00:00.000Z');await store.initialize();return {db,store};
 }
 
-test('independent historical v1 -> v6 fixture reproduces the exact observed preference table and original guard set',async()=>{
+test('independent historical v1 -> current fixture reproduces the exact observed preference table and original guard set',async()=>{
   for(const broken of [false,true]){
     const {db}=await historical(':memory:',broken);try{
-      const before=metadata(db),reports=[];assert.equal(await checkSchema(port(db),reference,r=>reports.push(r)),6);
+      const before=metadata(db),reports=[];assert.equal(await checkSchema(port(db),reference,r=>reports.push(r)),SCHEMA_VERSION);
       const guards=before.filter(o=>o.type==='trigger'&&o.tbl_name==='notice_preferences');assert.deepEqual(guards.map(g=>g.name),['locked_notice_preferences']);
       const table=before.find(o=>o.name==='notice_preferences');
       assert.match(norm(table.sql),/include_note INTEGER NOT NULL CHECK\(include_note IN \(0,1\)\), revision INTEGER NOT NULL CHECK\(revision>0\), note_snapshot TEXT NOT NULL DEFAULT '', FOREIGN KEY/);
@@ -44,11 +44,11 @@ test('independent historical v1 -> v6 fixture reproduces the exact observed pref
   }
 });
 
-test('fresh v6 and all real internal autoindexes are accepted; SQL-NULL unrelated objects are not ignored',async()=>{
+test('fresh current schema and all real internal autoindexes are accepted; SQL-NULL unrelated objects are not ignored',async()=>{
   const db=new DatabaseSync(':memory:');try{
     await new OrderStore(port(db),randomUUID).initialize();const actual=metadata(db),reports=[];
     const indexes=actual.filter(o=>o.sql===null);assert.ok(indexes.length>0);assert.ok(indexes.every(o=>o.type==='index'&&o.name.startsWith(`sqlite_autoindex_${o.tbl_name}_`)));
-    assert.equal(await checkSchema(port(db),reference,r=>reports.push(r)),6);assert.deepEqual(reports,[]);
+    assert.equal(await checkSchema(port(db),reference,r=>reports.push(r)),SCHEMA_VERSION);assert.deepEqual(reports,[]);
     const extra={type:'table',name:'unexpected_null_sql',tbl_name:'unexpected_null_sql',sql:null};
     const forged={...port(db),all:async sql=>sql.includes('FROM main.sqlite_master')?[...actual,extra]:port(db).all(sql)};
     await assert.rejects(checkSchema(forged,reference,r=>reports.push(r)));
@@ -100,11 +100,11 @@ test('real WAL backup of historical schema passes the shared export/import guard
     const zipped=Buffer.concat(chunks),entries=await inspectArchive(source(zipped)),out=[];
     await copyEntry(source(zipped),entries.find(e=>e.path==='data.sqlite'),{write:async b=>{out.push(Buffer.from(b));}});writeFileSync(join(dir,'import.sqlite'),Buffer.concat(out));
     const imported=new DatabaseSync(join(dir,'import.sqlite'));try{
-      assert.equal(await checkSchema(port(imported),reference),6);const data=await readBackupData(port(imported));
+      assert.equal(await checkSchema(port(imported),reference),SCHEMA_VERSION);const data=await readBackupData(port(imported));
       const targetStore=new OrderStore(port(target),randomUUID);await targetStore.initialize();
       await targetStore.maintenance(db=>replaceData(db,data,randomUUID(),randomUUID(),'2026-01-01T00:00:00.000Z'));
       const restored=await readBackupData(port(target));assert.deepEqual(restored.orders,before.orders);assert.deepEqual(restored.order_payment_snapshots,before.order_payment_snapshots);assert.deepEqual(restored.notice_preferences,before.notice_preferences);
-      assert.equal(await checkSchema(port(target),reference),6); // Fresh target keeps all three guards.
+      assert.equal(await checkSchema(port(target),reference),SCHEMA_VERSION); // Fresh target keeps all three guards.
       assert.equal(metadata(target).filter(o=>o.type==='trigger'&&o.tbl_name==='notice_preferences').length,3);
       assert.deepEqual(await readBackupData(port(db)),before);
     }finally{imported.close();}

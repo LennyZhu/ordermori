@@ -11,6 +11,7 @@ import { writeArchive, inspectArchive, copyEntry } from '../src/backup/archive.t
 import { parseManifest, verifySummary } from '../src/backup/manifest.ts';
 import { checkSchema, readBackupData, validateData } from '../src/backup/data.ts';
 import { OrderStore } from '../src/data/store.ts';
+import { SCHEMA_VERSION } from '../src/data/migrations.ts';
 
 const port=db=>({exec:async sql=>db.exec(sql),run:async(sql,p=[])=>db.prepare(sql).run(...p),first:async(sql,p=[])=>db.prepare(sql).get(...p)??null,all:async(sql,p=[])=>db.prepare(sql).all(...p)});
 const source=bytes=>({size:bytes.length,read:async(at,n)=>new Uint8Array(bytes.subarray(at,at+n))});
@@ -35,7 +36,7 @@ test('new export and existing .ordermori.zip/.ordermori files reimport the same 
     await new OrderStore(port(db),randomUUID).initialize();const data=await readBackupData(port(db)),summary=validateData(data);
     // Close this isolated fixture before reading its checkpointed main file.
     db.close();db=null;const databaseBytes=readFileSync(databasePath);
-    const manifest={format:'OrderMori',version:1,createdAt:'2026-10-29T12:34:56.000Z',schemaVersion:6,summary,files:[{path:'data.sqlite',size:databaseBytes.length,sha256:sha(databaseBytes)}]};
+    const manifest={format:'OrderMori',version:1,createdAt:'2026-10-29T12:34:56.000Z',schemaVersion:SCHEMA_VERSION,summary,files:[{path:'data.sqlite',size:databaseBytes.length,sha256:sha(databaseBytes)}]};
     const chunks=[];await writeArchive([{path:'manifest.json',source:source(Buffer.from(JSON.stringify(manifest)))},{path:'data.sqlite',source:source(databaseBytes)}],{write:async bytes=>{chunks.push(Buffer.from(bytes));}});
     const bytes=Buffer.concat(chunks);
     for(const name of [backupFileName(manifest.createdAt),'Existing-iOS-Backup.ordermori.zip','Legacy-Backup.ordermori']){
@@ -45,7 +46,7 @@ test('new export and existing .ordermori.zip/.ordermori files reimport the same 
       const parsed=parseManifest(contents['manifest.json'].toString(),entries);verifySummary(parsed,summary);
       assert.equal(sha(contents['data.sqlite']),parsed.files[0].sha256);
       const path=join(dir,randomUUID()+'.sqlite');writeFileSync(path,contents['data.sqlite']);const restored=new DatabaseSync(path);
-      try{assert.equal(await checkSchema(port(restored),reference),6);assert.deepEqual(await readBackupData(port(restored)),data);}finally{restored.close();}
+      try{assert.equal(await checkSchema(port(restored),reference),SCHEMA_VERSION);assert.deepEqual(await readBackupData(port(restored)),data);}finally{restored.close();}
     }
     // A recognized filename never makes non-ZIP/corrupt content valid.
     for(const name of ['corrupt.ordermori','corrupt.ordermori.zip']){

@@ -72,6 +72,11 @@ export default function ShopScreen() {
             <Ionicons name="wallet-outline" size={21} color={color.ink} /><View style={{ flex: 1, gap: 3 }}><Text style={e.fieldLabel}>收款方式與官方二維碼</Text><Text style={e.caption}>FPS、PayMe 及銀行轉帳</Text></View><Ionicons name="chevron-forward" size={16} color={color.muted} />
           </Pressable>
         </View>
+        <View style={{ gap: 8 }}><SectionHeading title="常用商品" />
+          <Pressable accessibilityRole="button" accessibilityLabel="管理常用商品名稱與預設單價" onPress={() => router.push('/shop/products')} style={({ pressed }) => [e.surface, e.inset, e.row, pressed && e.pressed]}>
+            <Ionicons name="star-outline" size={21} color={color.ink} /><View style={{ flex: 1, gap: 3 }}><Text style={e.fieldLabel}>常用商品庫</Text><Text style={e.caption}>儲存名稱及單價，下次開單直接選用</Text></View><Ionicons name="chevron-forward" size={16} color={color.muted} />
+          </Pressable>
+        </View>
         <View style={{ gap: 8 }}><SectionHeading title="資料與備份" />
           <Pressable accessibilityRole="button" onPress={() => router.push('/shop/backup')} style={({ pressed }) => [e.surface, e.inset, e.row, pressed && e.pressed]}>
             <Ionicons name="archive-outline" size={21} color={color.ink} /><View style={{ flex: 1, gap: 3 }}><Text style={e.fieldLabel}>備份與還原</Text><Text style={e.caption}>完整本機備份，安全取代還原</Text></View><Ionicons name="chevron-forward" size={16} color={color.muted} />

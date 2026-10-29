@@ -12,6 +12,9 @@ import { Button, ErrorNotice, Loading, color, s, shippingText } from './common';
 import { ActionButton, CompactField, SectionHeading, TextAction, e } from './editorial';
 import { visibleInputScrollOffset } from './focusScroll';
 import { OrderPaymentSection } from './OrderPaymentSection';
+import { ProductPickerModal } from './ProductPickerModal';
+import { appendCatalogProduct, productSlots } from '../domain/catalog';
+import type { CatalogProduct } from '../domain/catalog';
 
 function itemAmount(item: FormItem) {
   if (!item.price.trim()) return '待填單價';
@@ -23,6 +26,9 @@ export function OrderEditor({ orderId }: { orderId?: string }) {
   const { store } = useApp(); const router = useRouter(); const insets = useSafeAreaInsets();
   const { width, fontScale } = useWindowDimensions();
   const expandedFields = width - insets.left - insets.right - 40 < 340 || fontScale > 1.2;
+  // Keep the original narrow-screen fallback only when the three controls
+  // cannot fit at their minimum widths after this small width redistribution.
+  const itemFieldsExpanded = expandedFields || width - insets.left - insets.right - 64 < 326 + Math.max(0, Math.ceil(30 * fontScale) - 32);
   const isNew = !orderId;
   const [form, setForm] = useState<OrderInput | null>(null);
   const current = useRef<OrderInput | null>(null);
@@ -45,6 +51,7 @@ export function OrderEditor({ orderId }: { orderId?: string }) {
   const [error, setError] = useState(''); const [draftError, setDraftError] = useState('');
   const [draftStatus, setDraftStatus] = useState('正在讀取草稿…');
   const [busy, setBusy] = useState(false); const [retry, setRetry] = useState(0);
+  const [pickerOpen,setPickerOpen] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(Keyboard.isVisible());
   const ensureFocusedInputVisible = useCallback((allowWithoutKeyboard = false) => {
     if (!alive.current || dragging.current || keyboardClosing.current || (!allowWithoutKeyboard && !keyboardActive.current)) return;
@@ -119,6 +126,10 @@ export function OrderEditor({ orderId }: { orderId?: string }) {
       timer.current = setTimeout(() => { void persist(value, seq); }, 350);
     }
   }
+  function addProduct(product: CatalogProduct) {
+    if (!current.current || saving.current || closed.current) return;
+    change(appendCatalogProduct(current.current,product,randomUUID()),'items');
+  }
   function focusError(key: string) {
     const section = key === 'buyer' ? 'buyer' : key.startsWith('item.') || key === 'items' ? 'items' : key === 'note' ? 'note' : 'shipping';
     const itemId = key.split('.')[1];
@@ -192,6 +203,7 @@ export function OrderEditor({ orderId }: { orderId?: string }) {
       <View style={f.section} onLayout={(event) => { sectionPositions.current.items = event.nativeEvent.layout.y; }}>
         <SectionHeading title={`商品明細 · ${form.items.length}`} right={<TextAction title="加入商品" icon="add" disabled={busy || form.items.length >= 20}
           onPress={() => change({ ...form, items: [...form.items, { id: randomUUID(), name: '', price: '', quantity: '1' }] }, 'items')} />} />
+        <View style={[e.row,{justifyContent:'flex-start'}]}><TextAction title="選擇常用商品" icon="star-outline" disabled={busy || productSlots(form)<=0} onPress={()=>{Keyboard.dismiss();setPickerOpen(true);}}/></View>
         {!!fields.items && <Text accessibilityRole="alert" style={e.error}>{fields.items}</Text>}
         <View style={e.surface}>
           {form.items.length === 0 && <View style={[e.inset, { alignItems: 'center', paddingVertical: 20 }]}>
@@ -200,6 +212,7 @@ export function OrderEditor({ orderId }: { orderId?: string }) {
           {form.items.map((item, index) => {
             const quantity = /^\d+$/.test(item.quantity.trim()) ? Number(item.quantity) : NaN;
             const validQuantity = Number.isInteger(quantity) && quantity >= 1 && quantity <= 999;
+            const quantityWidth = item.quantity.trim().length > 2 ? Math.max(32, Math.ceil(30 * fontScale)) : Math.max(20, Math.ceil(20 * fontScale));
             return <View key={item.id} onLayout={(event) => { itemPositions.current[item.id] = event.nativeEvent.layout.y; }}>
               {index > 0 && <View style={e.divider} />}
               <View style={f.item}>
@@ -214,8 +227,8 @@ export function OrderEditor({ orderId }: { orderId?: string }) {
                 </View>
                 {!!fields[`item.${item.id}.name`] && <Text accessibilityRole="alert" style={e.error}>{fields[`item.${item.id}.name`]}</Text>}
                 {countChars(item.name) > 100 && <Text style={[e.caption, { textAlign: 'right' }]}>{countChars(item.name)} / 120</Text>}
-                <View style={[f.itemValues, expandedFields && { flexWrap: 'wrap' }]}>
-                  <View style={{ flex: 1.2, minWidth: 80 }}><CompactField ref={(ref) => { inputs.current[`item.${item.id}.price`] = ref; }}
+                <View style={[f.itemValues, itemFieldsExpanded && { flexWrap: 'wrap' }]}>
+                  <View style={{ flex: 2, minWidth: 112 }}><CompactField ref={(ref) => { inputs.current[`item.${item.id}.price`] = ref; }}
                     accessibilityLabel={`商品 ${index + 1} 單價（HK$）`} leading={<Text style={f.currency}>HK$</Text>}
                     keyboardType="decimal-pad" placeholder="單價" value={item.price} editable={!busy}
                     style={{ textAlign: 'right', fontVariant: ['tabular-nums'] }} onFocus={() => revealInput(`item.${item.id}.price`)} onBlur={() => releaseInput(`item.${item.id}.price`)} onChangeText={(value) => itemChange(item.id, 'price', value)} /></View>
@@ -225,14 +238,14 @@ export function OrderEditor({ orderId }: { orderId?: string }) {
                       onPress={() => itemChange(item.id, 'quantity', String(quantity - 1))}
                       style={({ pressed }) => [e.iconButton, (pressed || busy || !validQuantity || quantity <= 1) && e.pressed]}><Ionicons name="remove" size={17} color={color.ink} /></Pressable>
                     <TextInput ref={(ref) => { inputs.current[`item.${item.id}.quantity`] = ref; }} accessibilityLabel={`商品 ${index + 1} 數量`}
-                      keyboardType="number-pad" selectionColor={color.ink} value={item.quantity} editable={!busy} style={[f.quantity, { width: Math.max(44, Math.ceil(36 * fontScale)) }]}
+                      keyboardType="number-pad" selectionColor={color.ink} value={item.quantity} editable={!busy} style={[f.quantity, { width: quantityWidth }]}
                       onFocus={() => revealInput(`item.${item.id}.quantity`)} onBlur={() => releaseInput(`item.${item.id}.quantity`)} onChangeText={(value) => itemChange(item.id, 'quantity', value)} />
                     <Pressable accessibilityRole="button" accessibilityLabel={`增加商品 ${index + 1} 數量`} disabled={busy || !validQuantity || quantity >= 999}
                       accessibilityState={{ disabled: busy || !validQuantity || quantity >= 999 }}
                       onPress={() => itemChange(item.id, 'quantity', String(quantity + 1))}
                       style={({ pressed }) => [e.iconButton, (pressed || busy || !validQuantity || quantity >= 999) && e.pressed]}><Ionicons name="add" size={17} color={color.ink} /></Pressable>
                   </View>
-                  <View style={[f.lineAmount, expandedFields && { flexBasis: '100%', flexDirection: 'row', justifyContent: 'space-between' }]}>
+                  <View style={[f.lineAmount, itemFieldsExpanded && { flexBasis: '100%', flexDirection: 'row', justifyContent: 'space-between' }]}>
                     <Text style={f.currency}>行金額</Text><Text style={[e.numeric, { fontWeight: '500' }]}>{itemAmount(item)}</Text>
                   </View>
                 </View>
@@ -282,18 +295,20 @@ export function OrderEditor({ orderId }: { orderId?: string }) {
           <View style={{ maxWidth: '100%' }}><ActionButton title={isNew ? '儲存訂單' : '儲存修改'} icon="document-text-outline" busy={busy} onPress={save} /></View>}
       </View>
     </View>
-  </KeyboardAvoidingView></View></>;
+  </KeyboardAvoidingView>
+  {pickerOpen && <ProductPickerModal slots={productSlots(form)} onClose={()=>setPickerOpen(false)} onAdd={addProduct}/>}
+  </View></>;
 }
 
 const f = StyleSheet.create({
   section: { gap: 8 },
   item: { paddingHorizontal: 12, paddingTop: 4, paddingBottom: 12, gap: 6 },
   itemName: { flex: 1, minWidth: 0, minHeight: 44, paddingVertical: 10, fontSize: 15, lineHeight: 23, fontWeight: '500', color: color.ink },
-  itemValues: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  itemValues: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   currency: { fontSize: 12, lineHeight: 18, color: color.muted },
   stepper: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: color.line, borderRadius: 9 },
   quantity: { minHeight: 44, paddingVertical: 8, paddingHorizontal: 0, textAlign: 'center', fontVariant: ['tabular-nums'], fontSize: 15, color: color.ink },
-  lineAmount: { flex: 1, minWidth: 72, alignItems: 'flex-end', gap: 2 },
+  lineAmount: { flex: 1, minWidth: 84, alignItems: 'flex-end', gap: 2 },
   shippingGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   shippingOption: { flexBasis: '47%', flexGrow: 1, minWidth: 0, minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: 9,
     paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: color.line, borderRadius: 11, backgroundColor: color.surface },

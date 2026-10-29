@@ -63,6 +63,7 @@ function snapshot(f,path){
 test('complete archive round-trip uses real WAL backup, all business rows, immutable media, hashes and a clean schema',async()=>{
   const f=await fixture(3);const target=await fixture(0,false);
   try{
+    await f.store.saveProduct({name:'完整備份中的合成商品',price:'29.99'});
     const order=(await f.adapter.all('SELECT id FROM orders LIMIT 1'))[0];await f.store.changeStatus(order.id,1,'mark_paid','合成付款');await f.store.changeStatus(order.id,2,'fulfill','合成履約');
     const before=await readBackupData(f.adapter),snapshotPath=join(f.dir,'snapshot.sqlite');snapshot(f,snapshotPath);
     const copy=new DatabaseSync(snapshotPath);await checkSchema(port(copy),reference);const data=await readBackupData(port(copy));copy.close();

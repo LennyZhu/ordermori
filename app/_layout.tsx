@@ -13,6 +13,7 @@ export default function RootLayout() {
       <Stack.Screen name="order/[id]" options={{ title: '訂單詳情' }} />
       <Stack.Screen name="order/edit/[id]" options={{ title: '修改訂單' }} />
       <Stack.Screen name="order/notice/[id]" options={{ title: '付款通知預覽' }} />
+      <Stack.Screen name="shop/products" options={{ title: '常用商品' }} />
       <Stack.Screen name="shop/backup" options={{ title: '備份與還原' }} />
       <Stack.Screen name="shop/payments/index" options={{ title: '收款資料' }} />
       <Stack.Screen name="shop/payments/[kind]" options={{ title: '收款設定' }} />

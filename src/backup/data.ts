@@ -1,3 +1,4 @@
+import { validProductValues } from '../domain/catalog.ts';
 import { MIGRATIONS, SCHEMA_VERSION } from '../data/migrations.ts';
 import type { DatabasePort } from '../data/store.ts';
 import { OrderStore } from '../data/store.ts';
@@ -9,12 +10,12 @@ import { failBackup, LIMITS } from './archive.ts';
 import { schemaDiagnostic, schemaDifferences } from './schemaDiagnostics.ts';
 import type { SchemaDiagnostic, SchemaDifference, SchemaEntry } from './schemaDiagnostics.ts';
 
-export const TABLES = ['shops', 'app_state', 'orders', 'order_items', 'drafts', 'status_history', 'creation_ledger', 'payment_assets', 'payment_methods', 'shop_payment_defaults', 'order_payment_snapshots', 'notice_preferences', 'notice_files', 'backup_state', 'restore_receipts'] as const;
+export const TABLES = ['shops', 'app_state', 'orders', 'order_items', 'drafts', 'status_history', 'creation_ledger', 'payment_assets', 'payment_methods', 'shop_payment_defaults', 'order_payment_snapshots', 'notice_preferences', 'notice_files', 'backup_state', 'restore_receipts', 'catalog_products'] as const;
 export type Table = typeof TABLES[number];
 export type Row = Record<string, string | number | null>;
 export type BackupData = Record<Table, Row[]>;
 export interface MediaRef { path: string; size: number; sha256: string; width: number; height: number }
-export interface BackupSummary { orders: number; items: number; media: number; createdCount: number; profileId: string; schemaVersion: number }
+export interface BackupSummary { orders: number; items: number; media: number; createdCount: number; profileId: string; schemaVersion: number; products?: number }
 export interface SchemaObject { type: string; name: string; tbl_name: string; sql: string }
 export const objects = (db: DatabasePort) => db.all<SchemaObject>("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE sql IS NOT NULL ORDER BY name");
 const schemaObjects = (db: DatabasePort) => db.all<SchemaEntry>('SELECT type,name,tbl_name,sql FROM main.sqlite_master ORDER BY name');
@@ -145,8 +146,9 @@ export function validateData(data: BackupData): BackupSummary {
     if (!['buyer','shipping','shippingFee','discount','note'].every(k => typeof draft.input[k] === 'string')) failBackup('備份草稿資料無效。');
     if (draft.input.payment) { exactKeys(draft.input.payment, PAYMENT_KEYS); normalizePayment(draft.input.payment.kind, draft.input.payment); if (draft.input.payment.shopId !== shop.id) failBackup('草稿收款歸屬無效。'); }
   }
+  for (const product of data.catalog_products) if (!validProductValues(product.name,product.unit_price_cents) || !Number.isSafeInteger(product.revision) || Number(product.revision) < 1) failBackup('備份常用商品名稱或單價無效。');
   const media = mediaReferences(data);
-  return { orders: data.orders.length, items: data.order_items.length, media: media.length, createdCount: Number(state.created_count), profileId: String(state.profile_id), schemaVersion: SCHEMA_VERSION };
+  return { orders: data.orders.length, items: data.order_items.length, media: media.length, createdCount: Number(state.created_count), profileId: String(state.profile_id), schemaVersion: SCHEMA_VERSION, products: data.catalog_products.length };
 }
 export function mediaReferences(data: BackupData): MediaRef[] {
   for (const r of data.payment_assets) if (!['image/png','image/jpeg'].includes(String(r.mime)) || r.relative_path !== `payment-assets/${r.id}.${r.mime === 'image/png' ? 'png' : 'jpg'}` || Number(r.byte_count) > 20*1024*1024 || Number(r.width)*Number(r.height)>40000000 || Math.max(Number(r.width),Number(r.height))>12000) failBackup('備份收款圖片記錄無效。');
