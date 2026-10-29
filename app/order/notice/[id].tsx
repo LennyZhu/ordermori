@@ -14,6 +14,8 @@ import { persistNoticePng } from '../../../src/data/noticeFiles';
 import { NoticeCapture, releaseNoticeCapture } from '../../../src/ui/NoticeCapture';
 import type { NoticePreview } from '../../../src/ui/NoticeCapture';
 import { NoticeFilesModal } from '../../../src/ui/NoticeFilesModal';
+import { NoticeExportActions } from '../../../src/ui/NoticeExportActions';
+import { prepareNativeNoticeExport } from '../../../src/data/noticeExportNative';
 import { ActionButton, TextAction, e } from '../../../src/ui/editorial';
 import { ErrorNotice, Loading, color, s } from '../../../src/ui/common';
 
@@ -77,6 +79,7 @@ export default function NoticeScreen() {
   const canEdit = editable(context.detail.order);
   const nativeReady = !!UIManager.getViewManagerConfig('RNSVGSvgView');
   const selectedTemplate = selection ?? context.preferences.template;
+  const currentFile = derived.document ? files.find((file) => file.orderId === derived.document!.orderId && file.shopId === derived.document!.shopId && file.orderRevision === derived.document!.orderRevision && file.preferencesRevision === derived.document!.preferencesRevision && file.template === derived.document!.template) : undefined;
   const selectionPending = busy || switchFailed || selectedTemplate !== context.preferences.template;
   const controls = <View style={{ paddingHorizontal: 20, paddingTop: 10, gap: 8 }}>
       <View style={[e.row, { gap: 3, backgroundColor: color.mutedSurface, borderRadius: 10, padding: 3 }]}>
@@ -98,7 +101,7 @@ export default function NoticeScreen() {
     {history ? <ScrollView>{controls}{historyControl}</ScrollView> : selectionPending ? <ScrollView>{controls}<View style={e.content}>
       <Text accessibilityLiveRegion="polite" style={e.body}>{busy ? `正在準備${templateName[selectedTemplate]}…` : `${templateName[selectedTemplate]}尚未完成預覽，沒有沿用其他模板圖片。`}</Text>
       {!busy && <><TextAction title="重試所選模板" onPress={() => { void preferences({ ...context.preferences, template: selectedTemplate }); }} /><TextAction title={`返回已儲存的${templateName[context.preferences.template]}`} onPress={() => { setSelection(null); setSwitchFailed(false); setError(''); }} /></>}
-    </View>{historyControl}</ScrollView> : derived.document && nativeReady ? <NoticeWorkspace key={`${derived.document.orderId}:${derived.document.orderRevision}:${derived.document.preferencesRevision}:${width}`} document={derived.document} width={width - 40} onSaved={() => setRetry((n) => n + 1)} header={controls} footer={historyControl} /> :
+    </View>{historyControl}</ScrollView> : derived.document && nativeReady ? <NoticeWorkspace key={`${derived.document.orderId}:${derived.document.orderRevision}:${derived.document.preferencesRevision}:${width}`} document={derived.document} file={currentFile} width={width - 40} onSaved={() => setRetry((n) => n + 1)} header={controls} footer={historyControl} /> :
       <ScrollView contentContainerStyle={{ paddingBottom: 16 }}>{controls}<View style={e.content}>
         {derived.problems.map((problem) => <Text key={problem} style={e.body}>{problem}</Text>)}
         {!nativeReady && <Text style={e.body}>請先重新構建包含 view-shot 及 SVG 的 Development Build，才能生成付款通知。</Text>}
@@ -114,8 +117,9 @@ export default function NoticeScreen() {
   </SafeAreaView>;
 }
 
-function NoticeWorkspace({ document: initialDocument, width, onSaved, header, footer }: { document: NoticeDocument; width: number; onSaved: () => void; header: ReactNode; footer: ReactNode }) {
+function NoticeWorkspace({ document: initialDocument, file, width, onSaved, header, footer }: { document: NoticeDocument; file?: NoticeFileRecord; width: number; onSaved: () => void; header: ReactNode; footer: ReactNode }) {
   const [document] = useState(initialDocument);
+  const [initialFile] = useState(file); const [captureEnabled, setCaptureEnabled] = useState(!file); const [reused, setReused] = useState(false); const [exporting, setExporting] = useState(false);
   const { store } = useApp(); const identity = noticeRenderIdentity(document);
   const [state, dispatch] = useReducer(noticePreviewReducer, undefined, () => initialNoticePreview(identity, document.template)); const [busy, setBusy] = useState(false);
   const generation = useRef(1); const preview = state.image;
@@ -124,6 +128,19 @@ function NoticeWorkspace({ document: initialDocument, width, onSaved, header, fo
   const prepareCapture = useCallback(() => { page.current?.scrollTo({ y: Math.max(0, captureTop.current), animated: false }); }, []);
   const onSavedRef = useRef(onSaved); useEffect(() => { onSavedRef.current = onSaved; }, [onSaved]);
   useEffect(() => { alive.current = true; return () => { alive.current = false; if (temp.current) void releaseNoticeCapture(temp.current); }; }, []);
+  useEffect(() => {
+    if (!initialFile) return;
+    let active = true; const ticket = generation.current;
+    void prepareNativeNoticeExport(store, initialFile).then(({ uri }) => {
+      if (!active || !alive.current || ticket !== generation.current) return;
+      setReused(true);
+      dispatch({ type: 'ready', generation: ticket, image: { uri, width: initialFile.width, height: initialFile.height, captureMs: 0, identity, template: document.template } });
+      dispatch({ type: 'saved', generation: ticket, identity });
+    }).catch((cause: unknown) => {
+      if (active && alive.current && ticket === generation.current) dispatch({ type: 'error', generation: ticket, identity, error: noticeFailure('preview-read', document.template, cause).message });
+    });
+    return () => { active = false; };
+  }, [store, initialFile, identity, document.template]);
   function fail(ticket: number, cause: unknown) {
     if (!alive.current || ticket !== generation.current) return;
     const failure = noticeFailure('preview-read', document.template, cause); dispatch({ type: 'error', generation: ticket, identity, error: failure.message });
@@ -138,7 +155,7 @@ function NoticeWorkspace({ document: initialDocument, width, onSaved, header, fo
       temp.current = result.uri; dispatch({ type: 'ready', generation: ticket, image: result });
     } catch (cause) { await releaseNoticeCapture(result.uri); fail(ticket, cause); }
   }
-  function reset() { generation.current++; if (temp.current) void releaseNoticeCapture(temp.current); temp.current = null; dispatch({ type: 'retry' }); }
+  function reset() { generation.current++; setCaptureEnabled(true); setReused(false); if (temp.current) void releaseNoticeCapture(temp.current); temp.current = null; dispatch({ type: 'retry' }); }
   async function save() {
     if (!preview || !canSaveNoticePreview(state, identity, document.template) || lock.current || AppState.currentState !== 'active') return;
     const ticket = state.generation; lock.current = true; setBusy(true);
@@ -150,14 +167,14 @@ function NoticeWorkspace({ document: initialDocument, width, onSaved, header, fo
     <View onLayout={({ nativeEvent: { layout } }) => { captureTop.current = layout.y; }} style={{ height: Math.min(420, Math.max(180, height * 0.46)), marginHorizontal: 20, marginVertical: 10, borderRadius: 12, overflow: preview ? 'hidden' : 'visible', backgroundColor: color.surface }}>
       {preview && state.phase === 'ready' ? <ScrollView nestedScrollEnabled minimumZoomScale={1} maximumZoomScale={4} automaticallyAdjustContentInsets={false} contentInsetAdjustmentBehavior="never">
         <Image source={{ uri: preview.uri }} resizeMode="contain" style={{ width, height: width * preview.height / preview.width }} onLoad={() => dispatch({ type: 'displayed', generation: state.generation, identity })} onError={() => fail(state.generation, new DomainError('notice', 'PNG 未能顯示，請重新產生。'))} />
-      </ScrollView> : state.phase === 'error' ? <View style={e.content}><Text style={e.body}>{templateName[document.template]}預覽未成功，請重試。</Text></View> : <NoticeCapture key={state.generation} document={document} width={width} prepare={prepareCapture} onReady={(result) => { void ready(state.generation, result); }} onError={(cause) => fail(state.generation, cause)} />}
+      </ScrollView> : state.phase === 'error' ? <View style={e.content}><Text style={e.body}>{templateName[document.template]}預覽未成功，請重試。</Text></View> : captureEnabled ? <NoticeCapture key={state.generation} document={document} width={width} prepare={prepareCapture} onReady={(result) => { void ready(state.generation, result); }} onError={(cause) => fail(state.generation, cause)} /> : <View style={e.content}><Text style={e.caption}>正在讀取已儲存 PNG…</Text></View>}
     </View>
     <View style={{ paddingHorizontal: 20, gap: 8 }}>
       {!!state.error && <ErrorNotice message={state.error} />}
-      {preview && <Text style={e.caption}>{templateName[document.template]} PNG · {preview.width} × {preview.height} px · 擷取 {(preview.captureMs / 1000).toFixed(2)} 秒。請核對首末商品、總額、收款碼及頁尾；尺寸吻合不等於內容或掃碼驗證通過。</Text>}
-      {state.saved && <Text accessibilityLiveRegion="polite" style={[e.caption, { color: color.green }]}>PNG 已保存到 App 本機檔案。未分享到外部或保存至相簿。</Text>}
-      <ActionButton title={state.saved ? '已儲存到本機檔案' : '產生並儲存 PNG'} icon="document-outline" disabled={!canSaveNoticePreview(state, identity, document.template)} busy={busy} onPress={() => { void save(); }} />
-      <TextAction title={state.error ? '重新產生預覽' : '重新產生 / 檢查內容'} disabled={busy} onPress={reset} />
+      {preview && <Text style={e.caption}>{templateName[document.template]} PNG · {preview.width} × {preview.height} px · {reused ? '本機已儲存圖片' : `擷取 ${(preview.captureMs / 1000).toFixed(2)} 秒`}。請核對首末商品、總額、收款碼及頁尾；尺寸吻合不等於內容或掃碼驗證通過。</Text>}
+      {state.saved && <Text accessibilityLiveRegion="polite" style={[e.caption, { color: color.green }]}>PNG 已保存到 App 本機檔案。分享及相簿副本由你分別操作。</Text>}
+      {state.saved && file ? <NoticeExportActions key={file.id} store={store} file={file} onBusyChange={setExporting} /> : <ActionButton title={state.saved ? '已儲存到本機檔案' : '產生並儲存 PNG'} icon="document-outline" disabled={exporting || !canSaveNoticePreview(state, identity, document.template)} busy={busy} onPress={() => { void save(); }} />}
+      <TextAction title={state.error ? '重新產生預覽' : '重新產生 / 檢查內容'} disabled={busy || exporting} onPress={reset} />
     </View>
     {footer}
   </ScrollView>;
