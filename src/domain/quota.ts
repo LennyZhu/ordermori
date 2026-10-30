@@ -1,7 +1,7 @@
 import { DomainError, FREE_LIMIT } from './model.ts';
 
 export const QUOTA_TIME_ZONE = 'Asia/Hong_Kong';
-export const QUOTA_EXHAUSTED = '本月 15 張免費訂單已用完。下月將重新獲得 15 張額度；歷史訂單及草稿仍可使用。Pro 購買將於後續版本提供。';
+export const QUOTA_EXHAUSTED = '本月 15 張免費訂單已用完。下月將重新獲得 15 張額度；歷史訂單及草稿仍可使用。可了解 OrderMori Pro 永久解鎖。';
 export const QUOTA_CLOCK_ERROR = '裝置時間早於已記錄月份，請校正時間後建立訂單；歷史訂單及草稿仍可使用。';
 export interface MonthlyQuota {
   period: string; used: number; limit: number; remaining: number;

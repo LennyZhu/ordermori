@@ -36,7 +36,7 @@ test('independent historical v1 -> current fixture reproduces the exact observed
       const before=metadata(db),reports=[];assert.equal(await checkSchema(port(db),reference,r=>reports.push(r)),SCHEMA_VERSION);
       const guards=before.filter(o=>o.type==='trigger'&&o.tbl_name==='notice_preferences');assert.deepEqual(guards.map(g=>g.name),['locked_notice_preferences']);
       const table=before.find(o=>o.name==='notice_preferences');
-      assert.match(norm(table.sql),/include_note INTEGER NOT NULL CHECK\(include_note IN \(0,1\)\), revision INTEGER NOT NULL CHECK\(revision>0\), note_snapshot TEXT NOT NULL DEFAULT '', output_locale TEXT NOT NULL DEFAULT 'zh-HK' CHECK\(output_locale IN \('zh-HK','en'\)\), FOREIGN KEY/);
+      assert.match(norm(table.sql),/include_note INTEGER NOT NULL CHECK\(include_note IN \(0,1\)\), revision INTEGER NOT NULL CHECK\(revision>0\), note_snapshot TEXT NOT NULL DEFAULT '', output_locale TEXT NOT NULL DEFAULT 'zh-HK' CHECK\(output_locale IN \('zh-HK','en'\)\), hide_branding INTEGER NOT NULL DEFAULT 0 CHECK\(hide_branding IN \(0,1\)\), FOREIGN KEY/);
       assert.equal(reports[0].outcome,'legacy-compatible');assert.equal(reports[0].reference,'early-v3-original-guards');
       assert.equal(reports[0].objects.filter(o=>o.rule==='missing_object').length,2);
       assert.deepEqual(metadata(db),before); // Compatibility did not repair live schema.

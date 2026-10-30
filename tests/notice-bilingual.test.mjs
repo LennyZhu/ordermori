@@ -54,7 +54,7 @@ test('v6/v7 fresh and historical schemas upgrade forward, preserve old source ha
     assert.equal(await checkSchema(f.adapter,reference),version);f.db.exec('PRAGMA query_only=OFF');await f.store.initialize();await f.store.initialize();
     assert.equal(f.db.prepare('PRAGMA user_version').get().user_version,SCHEMA_VERSION);assert.deepEqual(f.db.prepare("SELECT name,sql FROM sqlite_master WHERE type='trigger' AND name NOT LIKE 'quota_%' ORDER BY name").all(),triggers);
     assert.equal(f.db.prepare("SELECT count(*) n FROM sqlite_master WHERE type='trigger' AND name LIKE 'quota_%'").get().n,4);
-    const after=rawRows(f.db);after.notice_files=after.notice_files.map(({locale,...r})=>{assert.equal(locale,'zh-HK');return r;});assert.deepEqual(after,before);
+    const after=rawRows(f.db);after.notice_files=after.notice_files.map(({locale,branding,...r})=>{assert.equal(locale,'zh-HK');assert.equal(branding,'Made with OrderMori');return r;});assert.deepEqual(after,before);
     const context=await f.store.getNoticeContext(id);assert.equal(context.preferences.locale,'zh-HK');assert.equal(hash(noticeSourceKey(buildNotice(context))),golden.sha256);
     assert.equal(noticeFileLocale((await f.store.listNoticeFiles(id))[0]),'zh-HK');assert.equal(await checkSchema(f.adapter,reference),SCHEMA_VERSION);
     assert.equal(firstNoticeLocale(context,await f.store.listNoticeFiles(id),'en'),'zh-HK');

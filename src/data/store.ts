@@ -3,12 +3,14 @@ import { MIGRATIONS, SCHEMA_VERSION } from './migrations.ts';
 import { normalizeProduct } from '../domain/catalog.ts';
 import type { CatalogProduct, ProductInput } from '../domain/catalog.ts';
 import { DomainError, blankInput, countChars, editable, evaluate, transition } from '../domain/model.ts';
+import { freeEntitlements } from '../domain/pro.ts';
+import type { EntitlementAccess } from '../domain/pro.ts';
 import { freeOrderPermission } from '../domain/quota.ts';
 import { monthlyQuota } from './monthlyQuota.ts';
 import type { Action, Draft, Filter, History, HomeData, Order, OrderDetail, OrderInput, OrderItem, Shop } from '../domain/model.ts';
 import { isPaymentKind, normalizePayment, paymentStatus, snapshotOf } from '../domain/payment.ts';
 import type { PaymentAsset, PaymentChoice, PaymentInput, PaymentKind, PaymentMethod, PaymentSettings, PaymentSnapshot, QrState } from '../domain/payment.ts';
-import { buildNotice, defaultNoticePreferences, noticeSourceKey, noticeFileLocale, NOTICE_TEMPLATES } from '../domain/notice.ts';
+import { buildNotice, defaultNoticePreferences, noticeSourceKey, noticeFileLocale, noticeFileBranding, NOTICE_TEMPLATES } from '../domain/notice.ts';
 import type { NoticeContext, NoticeFileRecord, NoticePreferences } from '../domain/notice.ts';
 import { noticeFailure, NoticeStageError } from '../domain/noticeDiagnostics.ts';
 import type { NoticeStage } from '../domain/noticeDiagnostics.ts';
@@ -35,10 +37,11 @@ export class OrderStore {
   private db: DatabasePort;
   private newId: () => string;
   private now: () => string;
+  private entitlements: EntitlementAccess;
   private verifyAsset: (asset: PaymentAsset) => Promise<QrState>;
-  constructor(db: DatabasePort, newId: () => string, now: () => string = () => new Date().toISOString(), verifyAsset: (asset: PaymentAsset) => Promise<QrState> = async () => 'missing') {
+  constructor(db: DatabasePort, newId: () => string, now: () => string = () => new Date().toISOString(), verifyAsset: (asset: PaymentAsset) => Promise<QrState> = async () => 'missing', entitlements: EntitlementAccess = freeEntitlements) {
     this.db = db; this.newId = newId; this.now = now;
-    this.verifyAsset = verifyAsset;
+    this.verifyAsset = verifyAsset; this.entitlements = entitlements;
   }
   subscribe(listener: () => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
   private emit() { this.listeners.forEach((listener) => listener()); }
@@ -254,16 +257,21 @@ export class OrderStore {
     const order = await this.ownedOrder(id);
     const row = await this.db.first<{ payload: string }>('SELECT payload FROM order_payment_snapshots WHERE order_id=? AND shop_id=?', [id, order.shop_id]);
     const payment = row ? JSON.parse(row.payload) as PaymentSnapshot : null;
-    const preferences = await this.db.first<{ template: NoticePreferences['template']; locale: 'zh-HK'; output_locale?: NoticePreferences['locale']; include_note: number; note_snapshot: string; revision: number }>('SELECT * FROM notice_preferences WHERE order_id=? AND shop_id=?', [id, order.shop_id]);
-    return { detail: { order, payment, items: await this.db.all<OrderItem>('SELECT * FROM order_items WHERE order_id=? AND shop_id=? ORDER BY position', [id, order.shop_id]), history: [] },
+    const preferences = await this.db.first<{ template: NoticePreferences['template']; locale: 'zh-HK'; output_locale?: NoticePreferences['locale']; include_note: number; note_snapshot: string; revision: number; hide_branding?: number }>('SELECT * FROM notice_preferences WHERE order_id=? AND shop_id=?', [id, order.shop_id]);
+    return { ...(this.entitlements.current().unlimited ? { canRemoveBranding: true } : {}), detail: { order, payment, items: await this.db.all<OrderItem>('SELECT * FROM order_items WHERE order_id=? AND shop_id=? ORDER BY position', [id, order.shop_id]), history: [] },
       payment: payment ? await this.paymentChoice(payment) : null,
-      preferences: preferences ? { template: preferences.template, locale: preferences.output_locale ?? preferences.locale, includeNote: !!preferences.include_note, noteSnapshot: preferences.note_snapshot, revision: preferences.revision } : defaultNoticePreferences() };
+      preferences: preferences ? { template: preferences.template, locale: preferences.output_locale ?? preferences.locale, includeNote: !!preferences.include_note, noteSnapshot: preferences.note_snapshot, revision: preferences.revision, ...(preferences.hide_branding === 1 ? { removeBranding: true } : {}) } : defaultNoticePreferences() };
   }
   async getNoticeContext(id: string) {
-    return this.enqueue(() => this.noticeContext(id).catch((cause: unknown) => { throw new NoticeStageError('settings-read', cause); }));
-  }
-  async saveNoticePreferences(id: string, orderRevision: number, expected: number, input: Pick<NoticePreferences, 'template' | 'includeNote'> & { locale?: NoticePreferences['locale']; confirmedNote?: string }) {
     return this.enqueue(async () => {
+      const grant = await this.entitlements.refresh();
+      try { const context = await this.noticeContext(id); this.entitlements.assertCurrent(grant); return context; }
+      catch (cause) { throw new NoticeStageError('settings-read', cause); }
+    });
+  }
+  async saveNoticePreferences(id: string, orderRevision: number, expected: number, input: Pick<NoticePreferences, 'template' | 'includeNote'> & { locale?: NoticePreferences['locale']; removeBranding?: boolean; confirmedNote?: string }) {
+    return this.enqueue(async () => {
+      const grant = await this.entitlements.refresh();
       let stage: NoticeStage = 'settings-transaction';
       try { return await this.atomic(async () => {
         stage = 'settings-read';
@@ -273,6 +281,8 @@ export class OrderStore {
         if (!NOTICE_TEMPLATES.includes(input.template) || !isNoticeLocale(input.locale ?? context.preferences.locale) || typeof input.includeNote !== 'boolean') throw new DomainError('notice', '通知設定無效。');
         if (input.confirmedNote !== undefined && (!input.includeNote || input.confirmedNote !== context.detail.order.note)) throw new DomainError('conflict', '備註已改變，請重新核對是否提供給客人。');
         if (input.includeNote && !context.preferences.includeNote && input.confirmedNote === undefined) throw new DomainError('notice', '請先明確確認客戶可見備註。');
+        if (input.removeBranding !== undefined && typeof input.removeBranding !== 'boolean') throw new DomainError('notice', '通知設定無效。');
+        if (input.removeBranding && !context.preferences.removeBranding && !grant.unlimited) throw new DomainError('pro_required', '請先透過 Apple 解鎖 Pro，才可移除新圖片的品牌署名。');
         const noteSnapshot = input.includeNote ? input.confirmedNote ?? context.preferences.noteSnapshot : '';
         stage = 'settings-write';
         // Legacy callers omit locale; preserve the existing output language.
@@ -280,6 +290,8 @@ export class OrderStore {
         await this.db.run(`INSERT INTO notice_preferences(order_id,shop_id,template,locale,include_note,note_snapshot,revision${setLocale ? ',output_locale' : ''}) VALUES(?,?,?,'zh-HK',?,?,?${setLocale ? ',?' : ''})
           ON CONFLICT(order_id) DO UPDATE SET template=excluded.template,include_note=excluded.include_note,note_snapshot=excluded.note_snapshot,revision=excluded.revision${setLocale ? ',output_locale=excluded.output_locale' : ''}`,
         [id, context.detail.order.shop_id, input.template, input.includeNote ? 1 : 0, noteSnapshot, expected + 1, ...(setLocale ? [input.locale!] : [])]);
+        if (input.removeBranding !== undefined) await this.db.run('UPDATE notice_preferences SET hide_branding=? WHERE order_id=?', [input.removeBranding ? 1 : 0, id]);
+        this.entitlements.assertCurrent(grant);
         stage = 'settings-commit';
       }); } catch (cause) {
         const schema = await noticeSchemaDiagnostic(this.db).catch(() => undefined);
@@ -299,20 +311,21 @@ export class OrderStore {
     });
   }
   async recordNoticeFile(file: NoticeFileRecord, sourceKey: string, active: () => boolean = () => true) {
-    return this.enqueue(async () => this.atomic(async () => {
+    return this.enqueue(async () => { const grant = await this.entitlements.refresh(); return this.atomic(async () => {
       const document = buildNotice(await this.noticeContext(file.orderId));
       if (!active()) throw new DomainError('notice', '已離開頁面或 App 不在前景，未保存此次輸出。');
-      if (noticeSourceKey(document) !== sourceKey || file.shopId !== document.shopId || file.orderRevision !== document.orderRevision || file.preferencesRevision !== document.preferencesRevision || file.template !== document.template || noticeFileLocale(file) !== document.locale) throw new DomainError('conflict', '產生期間訂單或通知設定已改變，未保存過期圖片。');
+      if (noticeSourceKey(document) !== sourceKey || file.shopId !== document.shopId || file.orderRevision !== document.orderRevision || file.preferencesRevision !== document.preferencesRevision || file.template !== document.template || noticeFileLocale(file) !== document.locale || noticeFileBranding(file) !== document.branding) throw new DomainError('conflict', '產生期間訂單或通知設定已改變，未保存過期圖片。');
       if (!isNoticeLocale(noticeFileLocale(file)) || !/^[a-f0-9-]{36}$/.test(file.id) || file.relativePath !== `payment-notices/${file.id}.png` || file.width !== 1080 || !Number.isSafeInteger(file.height) || file.height <= 0 || file.width * file.height * 12 > 256 * 1024 * 1024 || !Number.isSafeInteger(file.bytes) || file.bytes <= 0 || !/^[a-f0-9]{64}$/.test(file.sha256) || !/^[a-f0-9]{64}$/.test(file.dataHash) || !Number.isFinite(Date.parse(file.createdAt))) throw new DomainError('notice', '付款通知檔案資料無效。');
-      await this.db.run(`INSERT INTO notice_files(id,order_id,shop_id,order_revision,preferences_revision,template,relative_path,width,height,byte_count,sha256,data_hash,created_at,locale) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        [file.id, file.orderId, file.shopId, file.orderRevision, file.preferencesRevision, file.template, file.relativePath, file.width, file.height, file.bytes, file.sha256, file.dataHash, file.createdAt, noticeFileLocale(file)]);
-    }));
+      await this.db.run(`INSERT INTO notice_files(id,order_id,shop_id,order_revision,preferences_revision,template,relative_path,width,height,byte_count,sha256,data_hash,created_at,locale${file.branding !== undefined ? ",branding" : ""}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?${file.branding !== undefined ? ",?" : ""})`,
+        [file.id, file.orderId, file.shopId, file.orderRevision, file.preferencesRevision, file.template, file.relativePath, file.width, file.height, file.bytes, file.sha256, file.dataHash, file.createdAt, noticeFileLocale(file), ...(file.branding !== undefined ? [file.branding] : [])]);
+      this.entitlements.assertCurrent(grant);
+    }); });
   }
   async listNoticeFiles(id: string): Promise<NoticeFileRecord[]> {
     return this.enqueue(async () => {
       const order = await this.ownedOrder(id);
-      const rows = await this.db.all<{ id: string; order_id: string; shop_id: string; order_revision: number; preferences_revision: number; template: NoticeFileRecord['template']; locale?: NoticePreferences['locale']; relative_path: string; width: number; height: number; byte_count: number; sha256: string; data_hash: string; created_at: string }>('SELECT * FROM notice_files WHERE order_id=? AND shop_id=? ORDER BY created_at DESC,rowid DESC', [id, order.shop_id]);
-      return rows.map((r) => ({ id: r.id, orderId: r.order_id, shopId: r.shop_id, orderRevision: r.order_revision, preferencesRevision: r.preferences_revision, template: r.template, locale: r.locale ?? 'zh-HK', relativePath: r.relative_path, width: r.width, height: r.height, bytes: r.byte_count, sha256: r.sha256, dataHash: r.data_hash, createdAt: r.created_at }));
+      const rows = await this.db.all<{ id: string; order_id: string; shop_id: string; order_revision: number; preferences_revision: number; template: NoticeFileRecord['template']; branding?: NoticeFileRecord['branding']; locale?: NoticePreferences['locale']; relative_path: string; width: number; height: number; byte_count: number; sha256: string; data_hash: string; created_at: string }>('SELECT * FROM notice_files WHERE order_id=? AND shop_id=? ORDER BY created_at DESC,rowid DESC', [id, order.shop_id]);
+      return rows.map((r) => ({ id: r.id, orderId: r.order_id, shopId: r.shop_id, orderRevision: r.order_revision, preferencesRevision: r.preferences_revision, template: r.template, locale: r.locale ?? 'zh-HK', ...(r.branding === '' ? { branding: '' as const } : {}), relativePath: r.relative_path, width: r.width, height: r.height, bytes: r.byte_count, sha256: r.sha256, dataHash: r.data_hash, createdAt: r.created_at }));
     });
   }
   async removeNoticeFile(id: string, fileId: string) {
@@ -334,13 +347,13 @@ export class OrderStore {
         COALESCE(SUM(CASE WHEN order_status='active' AND payment_status='unpaid' AND fulfillment_status='pending' THEN 1 ELSE 0 END),0) AS unpaid,
         COALESCE(SUM(CASE WHEN order_status='active' AND payment_status='paid' AND fulfillment_status='pending' THEN 1 ELSE 0 END),0) AS fulfillment
         FROM orders WHERE shop_id=?`, [state.active_shop_id]);
-      return { orders, unpaid: counts!.unpaid, fulfillment: counts!.fulfillment, createdCount: state.created_count, quota,
+      return { orders, unpaid: counts!.unpaid, fulfillment: counts!.fulfillment, createdCount: state.created_count, quota: { ...quota, canCreate: this.entitlements.current().unlimited && !quota.clockRollback || quota.canCreate },
         hasDraft: !!await this.db.first('SELECT id FROM drafts WHERE id=1 AND is_active=1 AND shop_id=?', [state.active_shop_id]),
         shop: (await this.db.first<Shop>('SELECT * FROM shops WHERE id=?', [state.active_shop_id]))! };
     });
   }
   async getQuota() {
-    return this.enqueue(() => this.atomic(() => monthlyQuota(this.db, this.now())));
+    return this.enqueue(async () => { const quota = await this.atomic(() => monthlyQuota(this.db, this.now())); return { ...quota, canCreate: this.entitlements.current().unlimited && !quota.clockRollback || quota.canCreate }; });
   }
   // Read-only homepage projection; never opens, creates or updates a draft.
   async getDraftInput(): Promise<OrderInput | null> {
@@ -393,6 +406,7 @@ export class OrderStore {
   }
   async createOrder(requestId: string, input: OrderInput): Promise<string> {
     return this.enqueue(async () => {
+      const grant = await this.entitlements.refresh();
       const id = await this.atomic(async () => {
         const state = await this.state();
         const existing = await this.db.first<Order>('SELECT * FROM orders WHERE creation_request_id=? AND shop_id=?', [requestId, state.active_shop_id]);
@@ -404,7 +418,7 @@ export class OrderStore {
         const now = this.now();
         const quota = await monthlyQuota(this.db, now);
         const permission = freeOrderPermission(quota.used, quota.clockRollback);
-        if (!permission.allowed) throw new DomainError(quota.clockRollback ? 'quota_clock' : 'quota', permission.reason!);
+        if (!permission.allowed && (!grant.unlimited || quota.clockRollback)) throw new DomainError(quota.clockRollback ? 'quota_clock' : 'quota', permission.reason!);
         const ordinal = state.order_number_seq + 1;
         if (!Number.isSafeInteger(ordinal)) throw new DomainError('number', '訂單編號已超出安全範圍。');
         const orderId = this.newId();
@@ -421,6 +435,7 @@ export class OrderStore {
         await this.db.run("INSERT INTO status_history(id,order_id,shop_id,axis,from_value,to_value,reason,recorded_at) VALUES(?,?,?,'order','draft','active','明確儲存建立訂單',?)", [this.newId(), orderId, shop.id, now]);
         await this.db.run('UPDATE app_state SET created_count=created_count+1,order_number_seq=? WHERE id=1', [ordinal]);
         await this.db.run('UPDATE drafts SET is_active=0 WHERE id=1 AND request_id=?', [requestId]);
+        this.entitlements.assertCurrent(grant);
         return orderId;
       });
       this.emit(); return id;

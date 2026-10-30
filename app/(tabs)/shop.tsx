@@ -6,6 +6,7 @@ import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput,
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { usePro } from '../../src/ui/usePro';
 import { useApp } from '../../src/AppProvider';
 import { FREE_LIMIT, errorMessage } from '../../src/domain/model';
 import { QUOTA_CLOCK_ERROR } from '../../src/domain/quota';
@@ -14,6 +15,7 @@ import { ActionButton, CompactField, SectionHeading, e } from '../../src/ui/edit
 
 export default function ShopScreen() {
   const { preference } = useLanguage();
+  const pro = usePro();
   const { store, version } = useApp();
   const router = useRouter();
   const [name, setName] = useState('');
@@ -89,13 +91,16 @@ export default function ShopScreen() {
         <Pressable accessibilityRole="button" accessibilityLabel={tr('語言 / Language')} onPress={() => router.push('/shop/language')} style={({ pressed }) => [e.surface, e.inset, e.row, pressed && e.pressed]}>
           <Ionicons name="language-outline" size={21} color={color.ink}/><View style={{ flex:1, minWidth:0, gap:3 }}><Text style={e.fieldLabel}>{tr('語言 / Language')}</Text><Text style={e.caption}>{preference === 'system' ? tr('跟隨系統') : preference === 'en' ? 'English' : '繁體中文（香港）'}</Text></View><Ionicons name="chevron-forward" size={16} color={color.muted}/>
         </Pressable>
-        <View style={[e.surface, e.inset]}>
+        <Pressable accessibilityRole="button" onPress={() => router.push('/shop/pro')} style={({ pressed }) => [e.surface, e.inset, e.row, pressed && e.pressed]}>
+          <Ionicons name="sparkles-outline" size={21} color={color.ink} /><View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={e.fieldLabel}>OrderMori Pro</Text><Text style={e.caption}>{pro.hasPro ? tr('已解鎖 · 無限訂單') : tr('一次購買，永久解鎖')}</Text></View><Ionicons name="chevron-forward" size={16} color={color.muted} />
+        </Pressable>
+        {!pro.hasPro && <View style={[e.surface, e.inset]}>
           <View style={[e.rowWrap, { justifyContent: 'space-between' }]}><Text style={e.sectionTitle}>Free</Text><Text style={e.numeric}>{tr`本月已建立 ${count ?? '—'} / ${FREE_LIMIT} 張訂單`}</Text></View>
           <View style={e.divider} /><Text style={e.caption}>{tr`每月可免費建立 15 張正式訂單，取消、刪除及退款不退還當月額度。`}</Text>
           <Text style={e.caption}>{tr`每月 1 日重新計算，未用額度不累積。草稿及歷史訂單仍可使用。`}</Text>
-          <Text style={e.caption}>{tr`Pro 購買尚未開放。`}</Text>
+          <Pressable accessibilityRole="button" onPress={() => router.push('/shop/pro')} style={{ minHeight: 44, justifyContent: 'center' }}><Text style={e.fieldLabel}>{tr('了解 OrderMori Pro')}</Text></Pressable>
           {clockRollback && <Text style={e.caption}>{trMessage(QUOTA_CLOCK_ERROR)}</Text>}
-        </View>
+        </View>}
         <View style={{ gap: 8 }}><View style={e.row}><Ionicons name="lock-closed-outline" size={15} color={color.muted} /><Text style={e.fieldLabel}>{tr`本機資料，無需登入`}</Text></View>
           <Text style={e.caption}>{tr`資料只儲存在此裝置，請自行保管備份；刪除 App 將移除本機資料。`}</Text></View>
       </ScrollView>

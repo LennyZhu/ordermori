@@ -10,9 +10,9 @@ export type { NoticeLocale } from './noticeCopy.ts';
 export const NOTICE_TEMPLATES = ['editorial', 'soft'] as const;
 export type NoticeTemplate = typeof NOTICE_TEMPLATES[number];
 export const templateName: Record<NoticeTemplate, string> = { editorial: '黑白極簡', soft: '韓系柔和' };
-export interface NoticePreferences { template: NoticeTemplate; includeNote: boolean; noteSnapshot: string; locale: NoticeLocale; revision: number }
+export interface NoticePreferences { template: NoticeTemplate; includeNote: boolean; noteSnapshot: string; locale: NoticeLocale; revision: number; removeBranding?: boolean }
 export const defaultNoticePreferences = (): NoticePreferences => ({ template: 'editorial', includeNote: false, noteSnapshot: '', locale: 'zh-HK', revision: 0 });
-export interface NoticeContext { detail: OrderDetail; payment: PaymentChoice | null; preferences: NoticePreferences }
+export interface NoticeContext { detail: OrderDetail; payment: PaymentChoice | null; preferences: NoticePreferences; canRemoveBranding?: boolean }
 export interface NoticeDocument {
   version: 1; orderId: string; shopId: string; orderRevision: number; preferencesRevision: number;
   template: NoticeTemplate; locale: NoticeLocale; number: string; createdAt: string; shopName: string; shopDescription: string; buyer: string;
@@ -20,12 +20,13 @@ export interface NoticeDocument {
   subtotalCents: number; discountCents: number; shippingCents: number; totalCents: number;
   shipping: Order['shipping_method']; shippingText: string; customerNote: string;
   payment: NonNullable<OrderDetail['payment']>; qr: PaymentAsset | null;
-  // Both templates are Free. Future entitlement styling must not mutate this source snapshot.
-  branding: 'Made with OrderMori';
+  // Branding participates in the source identity. Runtime verified rights,
+  // never a stored preference alone, may remove it from new documents.
+  branding: '' | 'Made with OrderMori';
 }
 export interface NoticeFileRecord {
   id: string; orderId: string; shopId: string; orderRevision: number; preferencesRevision: number;
-  template: NoticeTemplate; locale?: NoticeLocale; relativePath: string; width: number; height: number; bytes: number; sha256: string; dataHash: string; createdAt: string;
+  template: NoticeTemplate; locale?: NoticeLocale; branding?: '' | 'Made with OrderMori'; relativePath: string; width: number; height: number; bytes: number; sha256: string; dataHash: string; createdAt: string;
 }
 export function noticeStateReason(order: Order): string | null {
   if (order.order_status !== 'active') return '已取消訂單不能產生新的付款通知。';
@@ -68,11 +69,12 @@ export function buildNotice(context: NoticeContext): NoticeDocument {
     items: items.map((i) => ({ id: i.id, position: i.position, name: i.name_snapshot, quantity: i.quantity, unitCents: i.unit_price_cents, lineCents: i.line_total_cents })),
     subtotalCents: o.subtotal_cents, discountCents: o.discount_cents, shippingCents: o.shipping_cents, totalCents: o.total_cents,
     shipping: o.shipping_method, shippingText: noticeShippingText(preferences.locale, o.shipping_method),
-    customerNote: preferences.includeNote ? preferences.noteSnapshot : '', payment: snapshotOf(detail.payment), qr: payment.asset ? { ...payment.asset } : null, branding: 'Made with OrderMori',
+    customerNote: preferences.includeNote ? preferences.noteSnapshot : '', payment: snapshotOf(detail.payment), qr: payment.asset ? { ...payment.asset } : null, branding: preferences.removeBranding && context.canRemoveBranding ? '' : 'Made with OrderMori',
   };
 }
 // Missing locale is accepted only for pre-v8 in-memory file records. SQLite v8
 // assigns zh-HK to every legacy file without changing its bytes or data hash.
+export const noticeFileBranding = (file: Pick<NoticeFileRecord, 'branding'>) => file.branding ?? 'Made with OrderMori';
 export const noticeFileLocale = (file: Pick<NoticeFileRecord,'locale'>): NoticeLocale => file.locale ?? 'zh-HK';
 export function firstNoticeLocale(context: NoticeContext, files: readonly NoticeFileRecord[], appLocale: NoticeLocale): NoticeLocale {
   return context.preferences.revision === 0 && files.length === 0 && editable(context.detail.order) && !noticeStateReason(context.detail.order) ? appLocale : context.preferences.locale;
@@ -98,6 +100,7 @@ export function noticeTextBlocks(d: NoticeDocument): Record<string, string> {
     reminder: c.reminder,
     legal: c.legal, brand: d.branding,
   };
+  if (!d.branding) delete blocks.brand;
   if (d.shopDescription.trim()) blocks.description = d.shopDescription;
   if (d.discountCents > 0) { blocks.discountLabel = c.discountLabel; blocks.discount = `− ${noticeMoney(d.discountCents)}`; }
   if (d.shipping === 'custom') { blocks.deliveryLabel = c.deliveryLabel; blocks.delivery = noticeMoney(d.shippingCents); }

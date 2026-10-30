@@ -1,5 +1,5 @@
 import { DomainError } from './model.ts';
-import { buildNotice, noticeSourceKey, noticeFileLocale } from './notice.ts';
+import { buildNotice, noticeSourceKey, noticeFileLocale, noticeFileBranding } from './notice.ts';
 import type { NoticeContext, NoticeDocument, NoticeFileRecord } from './notice.ts';
 
 export type NoticeExportKind = 'share' | 'photos';
@@ -7,9 +7,9 @@ export interface NoticeExportStore {
   getNoticeContext(id: string): Promise<NoticeContext>;
   listNoticeFiles(id: string): Promise<NoticeFileRecord[]>;
 }
-const fileKey = (f: NoticeFileRecord) => JSON.stringify([f.id, f.orderId, f.shopId, f.orderRevision, f.preferencesRevision, f.template, noticeFileLocale(f), f.relativePath, f.width, f.height, f.bytes, f.sha256, f.dataHash, f.createdAt]);
+const fileKey = (f: NoticeFileRecord) => JSON.stringify([f.id, f.orderId, f.shopId, f.orderRevision, f.preferencesRevision, f.template, noticeFileLocale(f), noticeFileBranding(f), f.relativePath, f.width, f.height, f.bytes, f.sha256, f.dataHash, f.createdAt]);
 export function assertNoticeExportCurrent(document: NoticeDocument, file: NoticeFileRecord, dataHash: string) {
-  if (file.orderId !== document.orderId || file.shopId !== document.shopId || file.template !== document.template || noticeFileLocale(file) !== document.locale ||
+  if (file.orderId !== document.orderId || file.shopId !== document.shopId || file.template !== document.template || noticeFileLocale(file) !== document.locale || noticeFileBranding(file) !== document.branding ||
     file.orderRevision !== document.orderRevision || file.preferencesRevision !== document.preferencesRevision || file.dataHash !== dataHash) {
     throw new DomainError('notice_export_stale', '此 PNG 的模板或訂單快照已過時，僅供歷史查看。請返回付款通知產生目前版本。');
   }

@@ -5,6 +5,7 @@ import { ActivityIndicator, Alert, FlatList, Pressable, ScrollView, StyleSheet, 
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { usePro } from '../../src/ui/usePro';
 import { useApp } from '../../src/AppProvider';
 import { FREE_LIMIT, errorMessage, money } from '../../src/domain/model';
 import { QUOTA_CLOCK_ERROR, QUOTA_EXHAUSTED } from '../../src/domain/quota';
@@ -15,6 +16,7 @@ import { hasDraftInput } from '../../src/ui/home';
 
 const filters: Filter[] = ['all', 'unpaid', 'fulfillment', 'completed', 'refunded', 'cancelled'];
 export default function OrdersScreen() {
+  const pro = usePro();
   useLanguage();
   const { store, version } = useApp();
   const router = useRouter();
@@ -41,7 +43,7 @@ export default function OrdersScreen() {
     if (!data) return;
     if (!data.quota.canCreate) {
       Alert.alert(tr(data.quota.clockRollback ? '請檢查裝置時間' : '本月免費額度已用完'), trMessage(data.quota.clockRollback ? QUOTA_CLOCK_ERROR : QUOTA_EXHAUSTED), [
-        { text: tr('取消'), style: 'cancel' }, { text: tr('編輯草稿'), onPress: () => router.push('/order/new') },
+        { text: tr('取消'), style: 'cancel' }, ...(!data.quota.clockRollback ? [{ text: tr('了解 OrderMori Pro'), onPress: () => router.push('/shop/pro') }] : []), { text: tr('編輯草稿'), onPress: () => router.push('/order/new') },
       ]); return;
     }
     if (resumeDraft) {
@@ -90,7 +92,7 @@ export default function OrdersScreen() {
         </Pressable>}
         {!!error && <ErrorNotice message={trMessage(error) + (data ? tr(" 以下可能為上次讀取的資料。") : '')} retry={() => setRetry((v) => v + 1)} />}
         <View style={{ gap: 6 }}><SectionHeading title={search ? tr("搜尋結果") : filter === 'all' ? tr("最近訂單") : t(filter)}
-          right={data ? <Text style={h.quota}>{tr`本月已建立 ${data.quota.used} / ${FREE_LIMIT} 張訂單`}</Text> : undefined} />
+          right={pro.hasPro ? <Text style={h.quota}>{tr('Pro · 無限訂單')}</Text> : data ? <Text style={h.quota}>{tr`本月已建立 ${data.quota.used} / ${FREE_LIMIT} 張訂單`}</Text> : undefined} />
           {data && !data.quota.canCreate && <Text style={e.caption}>{trMessage(data.quota.clockRollback ? QUOTA_CLOCK_ERROR : QUOTA_EXHAUSTED)}</Text>}
         </View>
       </View>}

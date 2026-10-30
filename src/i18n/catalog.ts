@@ -3534,5 +3534,211 @@ export const catalog = [
   "id": "p4c_old_draft",
   "zh": "這份草稿已曾建立正式訂單；還原不會重發建立次數，請另開新草稿。",
   "en": "This draft was already used to create an order. Restoring does not grant another creation. Start a new draft."
-}
+},
+{
+  "id": "p4d_000",
+  "zh": "了解 OrderMori Pro",
+  "en": "Explore OrderMori Pro"
+},
+{
+  "id": "p4d_001",
+  "zh": "已解鎖 · 無限訂單",
+  "en": "Unlocked · Unlimited orders"
+},
+{
+  "id": "p4d_002",
+  "zh": "Pro · 無限訂單",
+  "en": "Pro · Unlimited orders"
+},
+{
+  "id": "p4d_003",
+  "zh": "一次購買，永久解鎖",
+  "en": "One-time purchase, lifetime unlock"
+},
+{
+  "id": "p4d_004",
+  "zh": "無限建立正式訂單",
+  "en": "Unlimited orders"
+},
+{
+  "id": "p4d_005",
+  "zh": "移除付款通知品牌署名",
+  "en": "Remove OrderMori branding from payment notices"
+},
+{
+  "id": "p4d_006",
+  "zh": "無月費、無自動續訂",
+  "en": "No subscription or recurring fees"
+},
+{
+  "id": "p4d_007",
+  "zh": "Pro 已永久解鎖",
+  "en": "Pro unlocked for life"
+},
+{
+  "id": "p4d_008",
+  "zh": "升級 OrderMori Pro",
+  "en": "Upgrade to OrderMori Pro"
+},
+{
+  "id": "p4d_009",
+  "zh": "為你的小店，留更多開單空間。",
+  "en": "More room for your growing shop."
+},
+{
+  "id": "p4d_010",
+  "zh": "已擁有 OrderMori Pro",
+  "en": "You own OrderMori Pro"
+},
+{
+  "id": "p4d_011",
+  "zh": "永久解鎖 · %{v0}",
+  "en": "Unlock for life · %{v0}"
+},
+{
+  "id": "p4d_012",
+  "zh": "正在載入 Apple 價格…",
+  "en": "Loading Apple price…"
+},
+{
+  "id": "p4d_013",
+  "zh": "Apple 商品暫不可用",
+  "en": "Apple product unavailable"
+},
+{
+  "id": "p4d_014",
+  "zh": "重新載入 Apple 商品",
+  "en": "Reload Apple product"
+},
+{
+  "id": "p4d_015",
+  "zh": "正在恢復購買…",
+  "en": "Restoring purchases…"
+},
+{
+  "id": "p4d_016",
+  "zh": "恢復購買",
+  "en": "Restore Purchases"
+},
+{
+  "id": "p4d_017",
+  "zh": "正在確認 Apple 權益…",
+  "en": "Checking Apple entitlements…"
+},
+{
+  "id": "p4d_018",
+  "zh": "一次性購買 · 無訂閱月費 · 不設使用期限",
+  "en": "One-time purchase · No subscription · No expiry"
+},
+{
+  "id": "p4d_019",
+  "zh": "價格由 Apple 按你的 App Store 地區提供，與訂單的 HKD 金額無關。",
+  "en": "Apple provides pricing for your App Store region. This is separate from your HKD order amounts."
+},
+{
+  "id": "p4d_020",
+  "zh": "兩款模板、商品庫、分享、相簿儲存及備份仍免費。已保存圖片不會因升級而改寫。",
+  "en": "Both templates, saved products, sharing, photo export and backups stay free. Upgrading never rewrites saved images."
+},
+{
+  "id": "p4d_021",
+  "zh": "除 Apple 確認退款或撤銷等特殊交易情況外，正常購買不因時間經過失效。換裝置可使用相同 Apple 購買帳戶恢復。",
+  "en": "Your purchase does not expire with time, except for refunds or revocations confirmed by Apple. Restore it on another device using the same Apple purchase account."
+},
+{
+  "id": "p4d_022",
+  "zh": "移除 OrderMori 署名 · Pro",
+  "en": "Remove OrderMori branding · Pro"
+},
+{
+  "id": "p4d_023",
+  "zh": "購買權益已改變，未建立或輸出過期內容，請重試。",
+  "en": "Your purchase entitlement changed. No order or outdated output was saved. Please try again."
+},
+{
+  "id": "p4d_024",
+  "zh": "請先透過 Apple 解鎖 Pro，才可移除新圖片的品牌署名。",
+  "en": "Unlock Pro through Apple before removing branding from new images."
+},
+{
+  "id": "p4d_025",
+  "zh": "備份通知署名設定無效。",
+  "en": "The backup contains invalid notice branding settings."
+},
+{
+  "id": "p4d_026",
+  "zh": "備份通知署名資料無效。",
+  "en": "The backup contains invalid notice branding metadata."
+},
+{
+  "id": "p4d_027",
+  "zh": "此 Development Build 尚未包含內購模組，請重新構建後再試。",
+  "en": "This development build does not include the purchase module. Rebuild the app and try again."
+},
+{
+  "id": "p4d_028",
+  "zh": "暫時無法確認 Apple 購買資料。已確認的離線權益不會因網絡中斷而到期，請稍後重試。",
+  "en": "Apple purchase information is temporarily unavailable. Verified offline entitlements do not expire because of a network interruption. Please try again later."
+},
+{
+  "id": "p4d_029",
+  "zh": "Apple 交易未能通過驗證，未授予新的 Pro 權益。請重試或恢復購買。",
+  "en": "The Apple transaction could not be verified. No new Pro entitlement was granted. Retry or restore purchases."
+},
+{
+  "id": "p4d_030",
+  "zh": "Apple 商品目前無法載入，未顯示價格或發起購買。請檢查網絡及商店設定後重試。",
+  "en": "The Apple product could not be loaded. No price is shown and no purchase was started. Check your connection and store settings, then retry."
+},
+{
+  "id": "p4d_031",
+  "zh": "已取消購買，未解鎖或變更訂單。",
+  "en": "Purchase cancelled. No entitlement or order was changed."
+},
+{
+  "id": "p4d_032",
+  "zh": "購買正等待 Apple 或家長批准，確認有效交易前不會解鎖。",
+  "en": "The purchase is awaiting Apple or parental approval. Pro will unlock only after a valid transaction is verified."
+},
+{
+  "id": "p4d_033",
+  "zh": "OrderMori Pro 已永久解鎖。",
+  "en": "OrderMori Pro is unlocked for life."
+},
+{
+  "id": "p4d_034",
+  "zh": "已恢復 OrderMori Pro。",
+  "en": "OrderMori Pro restored."
+},
+{
+  "id": "p4d_035",
+  "zh": "未找到可恢復的有效 Pro 購買，請確認目前的 Apple 購買帳戶。",
+  "en": "No valid Pro purchase was found. Check your current Apple purchase account."
+},
+{
+  "id": "p4d_036",
+  "zh": "Apple 購買未能完成，請稍後重試。未授予新的權益。",
+  "en": "The Apple purchase could not be completed. Try again later. No new entitlement was granted."
+},
+{
+  "id": "p4d_037",
+  "zh": "未能完成恢復購買。請檢查網絡及 Apple 帳戶後重試。",
+  "en": "Purchases could not be restored. Check your connection and Apple account, then retry."
+},
+{
+  "id": "p4d_038",
+  "zh": "Apple 已確認 Pro 權益不再有效。資料仍保留，新圖片將使用 Free 品牌署名。",
+  "en": "Apple confirmed that Pro is no longer valid. Your data is preserved. New images will use Free branding."
+},
+{
+  "id": "p4d_039",
+  "zh": "Pro 已驗證，交易完成處理仍待重試；請稍後重新同步。",
+  "en": "Pro is verified. Transaction completion needs another attempt; please sync again later."
+},
+{
+  "id": "p4d_040",
+  "zh": "本月 15 張免費訂單已用完。下月將重新獲得 15 張額度；歷史訂單及草稿仍可使用。可了解 OrderMori Pro 永久解鎖。",
+  "en": "All 15 free orders for this month have been used. You will receive 15 new slots next month. Your history and drafts remain available. Explore the lifetime OrderMori Pro unlock."
+},
+{ "id": "p4d_unbranded", "zh": "無 OrderMori 署名", "en": "Without OrderMori branding" }
 ] as const;

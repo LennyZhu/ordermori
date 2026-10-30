@@ -107,7 +107,7 @@ test('v6/v7/v8 lifetime-ten databases migrate once, preserve every old row and g
     for(let n=0;n<15;n++){const draft=await f.store.openDraft();await f.store.createOrder(draft.requestId,input());}
     assert.equal((await f.store.getQuota()).used,15);assert.equal((await f.store.getHome()).createdCount,25);
     const draft=await f.store.openDraft();await assert.rejects(f.store.createOrder(draft.requestId,input()),e=>e.code==='quota');
-    assert.equal(await checkSchema(f.adapter,reference),9);
+    assert.equal(await checkSchema(f.adapter,reference),10);
   }finally{f.db.close();}}
 });
 

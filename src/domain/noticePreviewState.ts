@@ -1,6 +1,6 @@
 import type { NoticeLocale, NoticeTemplate } from './notice.ts';
 import { DomainError } from './model.ts';
-export const noticeRenderIdentity = (d: { orderId: string; orderRevision: number; preferencesRevision: number; template: NoticeTemplate; locale?: NoticeLocale }): string => `${d.orderId}:${d.orderRevision}:${d.preferencesRevision}:${d.template}:${d.locale ?? 'zh-HK'}`;
+export const noticeRenderIdentity = (d: { orderId: string; orderRevision: number; preferencesRevision: number; template: NoticeTemplate; locale?: NoticeLocale; branding?: string }): string => `${d.orderId}:${d.orderRevision}:${d.preferencesRevision}:${d.template}:${d.locale ?? 'zh-HK'}${d.branding === '' ? ':unbranded' : ''}`;
 export interface NoticePreviewImage { uri: string; width: number; height: number; captureMs: number; template: NoticeTemplate; identity: string }
 export interface NoticePreviewState {
   phase: 'loading' | 'ready' | 'error'; generation: number; identity: string; template: NoticeTemplate;

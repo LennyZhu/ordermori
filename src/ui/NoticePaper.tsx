@@ -100,7 +100,7 @@ export const NoticePaper = memo(function NoticePaper({ document: d, width, obser
         <Copy id="thanks" size={soft ? 20 : 17} style={{ color: soft ? '#9C7D64' : muted, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontStyle: 'italic', flexShrink: 1 }} />
       </View>
       <Copy id="legal" size={9} style={{ color: muted }} />
-      <Copy id="brand" size={8} style={{ color: muted, textAlign: 'right', marginTop: gap(4) }} />
+      {!!b.brand && <Copy id="brand" size={8} style={{ color: muted, textAlign: 'right', marginTop: gap(4) }} />}
     </View>
   </View>;
 });

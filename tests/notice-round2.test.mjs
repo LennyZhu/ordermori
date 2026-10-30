@@ -38,7 +38,7 @@ function legacyV3(missingColumn, includeNote = false, path = ':memory:') {
 }
 const tables = ['orders','order_items','payment_methods','order_payment_snapshots','notice_files','app_state'];
 // These regressions compare pre-v8 columns; bilingual metadata is tested separately.
-const rows = (db) => Object.fromEntries(tables.map((t) => [t,db.prepare(`SELECT * FROM ${t}`).all().map(row=>{if(t!=='notice_files')return row;const {locale: _locale,...legacy}=row;return legacy;})]));
+const rows = (db) => Object.fromEntries(tables.map((t) => [t,db.prepare(`SELECT * FROM ${t}`).all().map(row=>{if(t!=='notice_files')return row;const {locale: _locale,branding: _branding,...legacy}=row;return legacy;})]));
 
 test('reproduces v3: default black preview works, first template write fails without note_snapshot; v4 repairs forwards', async () => {
   const { db, store } = legacyV3(true);

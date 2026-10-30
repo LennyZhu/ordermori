@@ -16,6 +16,7 @@ export default function RootLayout() {
       <Stack.Screen name="order/[id]" options={{ title: tr("訂單詳情") }} />
       <Stack.Screen name="order/edit/[id]" options={{ title: tr("修改訂單") }} />
       <Stack.Screen name="order/notice/[id]" options={{ title: tr("付款通知預覽") }} />
+      <Stack.Screen name="shop/pro" options={{ title: 'OrderMori Pro' }} />
       <Stack.Screen name="shop/language" options={{ title: tr("語言 / Language") }} />
       <Stack.Screen name="shop/products" options={{ title: tr("常用商品") }} />
       <Stack.Screen name="shop/backup" options={{ title: tr("備份與還原") }} />

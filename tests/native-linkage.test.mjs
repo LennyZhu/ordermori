@@ -5,11 +5,14 @@ import { fileURLToPath } from 'node:url';
 
 // Exercise the installed SDK's real resolver consumed by use_expo_modules!.
 // This checks configuration/registration, not native compilation or launch.
-test('iOS autolinking sources only MediaLibrary and still registers sharing, photos and localization modules', () => {
+test('iOS autolinking sources MediaLibrary and IAP and still registers sharing, photos and localization modules', () => {
   const root = fileURLToPath(new URL('../', import.meta.url));
   const cli = fileURLToPath(new URL('../node_modules/expo-modules-autolinking/bin/expo-modules-autolinking.js', import.meta.url));
   const resolved = JSON.parse(execFileSync(process.execPath, [cli, 'resolve', '--platform', 'apple', '--json'], { cwd: root, encoding: 'utf8' }));
-  assert.deepEqual(resolved.configuration.buildFromSource, ['expo-media-library']);
+  assert.deepEqual(resolved.configuration.buildFromSource, ['expo-media-library','expo-iap']);
+  const iap = resolved.modules.find(m => m.packageName === 'expo-iap');
+  assert.ok(iap?.pods.some(p => p.podName === 'ExpoIap'));
+  assert.ok(iap?.modules.some(m => m.class === 'ExpoIapModule'));
   const media = resolved.modules.find((m) => m.packageName === 'expo-media-library');
   const sharing = resolved.modules.find((m) => m.packageName === 'expo-sharing');
   assert.ok(media?.pods.some((p) => p.podName === 'ExpoMediaLibrary'));

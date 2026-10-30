@@ -84,7 +84,7 @@ test('native language config merges signing, preserves media ABI fix and declare
   const require=createRequire(import.meta.url),configure=require('../app.config.js');const base={ios:{appleTeamId:'SYNTHETIC',bundleIdentifier:'synthetic.test',infoPlist:{Existing:true}},plugins:['existing'],locales:{fr:{test:'test'}}},config=configure({config:base});
   assert.equal(config.ios.appleTeamId,base.ios.appleTeamId);assert.equal(config.ios.bundleIdentifier,base.ios.bundleIdentifier);assert.equal(config.ios.infoPlist.Existing,true);assert.deepEqual(config.plugins.find(p=>Array.isArray(p)&&p[0]==='expo-localization')[1].supportedLocales.ios,['zh-HK','en']);
   assert.ok(config.locales.fr);for(const locale of ['en','zh-HK']){const copy=JSON.parse(readFileSync(config.locales[locale],'utf8'));assert.ok(copy.NSPhotoLibraryUsageDescription&&copy.NSPhotoLibraryAddUsageDescription);}
-  assert.deepEqual(JSON.parse(readFileSync('package.json','utf8')).expo.autolinking.ios.buildFromSource,['expo-media-library']);
+  assert.deepEqual(JSON.parse(readFileSync('package.json','utf8')).expo.autolinking.ios.buildFromSource,['expo-media-library','expo-iap']);
 });
 
 test('formal UI has no untranslated literal JSX text or string attributes outside the intentionally frozen PNG paper',()=>{

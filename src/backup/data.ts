@@ -109,6 +109,7 @@ export async function readBackupData(db: DatabasePort): Promise<BackupData> {
 export function validateData(data: BackupData): BackupSummary {
   if (data.shops.length !== 1 || data.app_state.length !== 1 || data.backup_state.length !== 1) failBackup('只支援完整的單店舖本機檔案。');
   const state = data.app_state[0], shop = data.shops[0];
+  exactKeys(state, ['id','profile_id','active_shop_id','locale','created_count','order_number_seq']);
   if (state.id !== 1 || state.active_shop_id !== shop.id || typeof state.profile_id !== 'string' || !state.profile_id || data.backup_state[0].id !== 1 || (data.backup_state[0].media_generation !== '' && !/^[a-f0-9-]{36}$/.test(String(data.backup_state[0].media_generation)))) failBackup('備份檔案設定無效。');
   for (const table of TABLES) for (const row of data[table]) if ('shop_id' in row && row.shop_id !== shop.id) failBackup('備份含不一致的店舖歸屬。');
   const allocated = data.creation_ledger.map(r => Number(r.allocated_number)).sort((a,b) => a-b);
@@ -149,6 +150,8 @@ export function validateData(data: BackupData): BackupSummary {
     if (draft.input.payment) { exactKeys(draft.input.payment, PAYMENT_KEYS); normalizePayment(draft.input.payment.kind, draft.input.payment); if (draft.input.payment.shopId !== shop.id) failBackup('草稿收款歸屬無效。'); }
   }
   for (const product of data.catalog_products) if (!validProductValues(product.name,product.unit_price_cents) || !Number.isSafeInteger(product.revision) || Number(product.revision) < 1) failBackup('備份常用商品名稱或單價無效。');
+  for (const row of data.notice_preferences) if (![0,1].includes(Number(row.hide_branding))) failBackup('備份通知署名設定無效。');
+  for (const row of data.notice_files) if (!['','Made with OrderMori'].includes(String(row.branding))) failBackup('備份通知署名資料無效。');
   for (const row of data.notice_preferences) if (!isNoticeLocale(row.output_locale)) failBackup('備份付款通知語言無效。');
   for (const row of data.notice_files) if (!isNoticeLocale(row.locale)) failBackup('備份付款通知語言無效。');
   validateQuotaBackup(data.quota_state, data.quota_events, data.orders);

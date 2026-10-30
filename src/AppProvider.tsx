@@ -3,6 +3,7 @@ import { useLanguage } from "./i18n/react";
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { AppState, View, Text } from 'react-native';
+import { proEntitlements } from './data/proNative';
 import { openStore, reopenStore } from './data/native';
 import { cleanupBackupCache, releaseBackup, restoreBackup } from './data/backupNative';
 import type { BackupPreview } from './data/backupNative';
@@ -44,6 +45,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     openStore().then((value) => { if (active) setStore(value); }).catch((cause: unknown) => { if (active) setError(errorMessage(cause)); });
     return () => { active = false; };
   }, [attempt]);
+  useEffect(() => {
+    let revision = proEntitlements.current().revision;
+    const unsubscribe = proEntitlements.subscribe(() => {
+      const next = proEntitlements.current().revision;
+      if (revision !== next) { revision = next; setVersion(value => value + 1); }
+    });
+    void proEntitlements.start();
+    const listener = AppState.addEventListener('change', state => { if (state === 'active') void proEntitlements.refresh(); });
+    return () => { unsubscribe(); listener.remove(); };
+  }, []);
   useEffect(() => store?.subscribe(() => setVersion((value) => value + 1)), [store]);
   useEffect(() => {
     if (!store) return;

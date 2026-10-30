@@ -1,5 +1,6 @@
 import { backupDatabaseAsync, openDatabaseAsync } from 'expo-sqlite';
 import { randomUUID } from 'expo-crypto';
+import { proEntitlements } from './proNative';
 import { OrderStore } from './store';
 import { verifyPaymentAsset } from './paymentFiles';
 import { setMediaGeneration, businessMediaRoot } from './mediaRoot';
@@ -21,7 +22,7 @@ let pending: Promise<OrderStore> | undefined;
 export function openStore(): Promise<OrderStore> {
   pending ??= (async () => {
     const database = await openDatabaseAsync('ordermori.db', { useNewConnection: true });
-    const store = new OrderStore(databasePort(database), randomUUID, undefined, verifyPaymentAsset);
+    const store = new OrderStore(databasePort(database), randomUUID, undefined, verifyPaymentAsset, proEntitlements);
     try {
       await store.initialize();
       const state = await database.getFirstAsync<{ media_generation: string }>('SELECT media_generation FROM backup_state WHERE id=1');
