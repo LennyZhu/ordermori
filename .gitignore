@@ -13,6 +13,7 @@ coverage/
 .env.*
 .envrc
 .envrc.local
+.vercel/
 !.env.example
 !.env.*.example
 !.env.template
