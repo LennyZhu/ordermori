@@ -18,6 +18,18 @@
       "expo-sqlite",
       "expo-status-bar",
       "expo-font"
-    ]
+    ],
+    "extra": {
+      "legal": {},
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "f6b5d95f-789e-43dd-8066-d386cf2e800a"
+      }
+    },
+    "owner": "homeypaw"
   }
 }

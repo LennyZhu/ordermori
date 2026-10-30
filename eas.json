@@ -1,0 +1,22 @@
+{
+  "cli": {
+    "appVersionSource": "local"
+  },
+  "build": {
+    "production": {
+      "developmentClient": false,
+      "distribution": "store",
+      "environment": "production",
+      "autoIncrement": false,
+      "node": "22.13.0",
+      "ios": {
+        "simulator": false,
+        "buildConfiguration": "Release",
+        "image": "macos-tahoe-26.5-xcode-26.6"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

@@ -178,7 +178,7 @@ test('after reopening real SQLite, a tall saved PNG can be exported without rend
 test('config extends existing signing and plugins, keeps outgoing-only sharing and a Traditional Chinese add-photos description',()=>{
   const config={ios:{appleTeamId:'SYNTHETIC_TEAM',infoPlist:{ExistingSetting:true}},plugins:['synthetic-existing-plugin']};
   const result=createRequire(import.meta.url)('../app.config.js')({config});
-  assert.deepEqual(result.ios,{...config.ios,infoPlist:{...config.ios.infoPlist,CFBundleAllowMixedLocalizations:true}});assert.equal(result.plugins[0],config.plugins[0]);
+  assert.deepEqual(result.ios,{...config.ios,bundleIdentifier:'com.zhushunli.ordermori',supportsTablet:false,buildNumber:'1',infoPlist:{...config.ios.infoPlist,CFBundleAllowMixedLocalizations:true}});assert.equal(result.plugins[0],config.plugins[0]);
   const sharing=result.plugins.find(p=>Array.isArray(p)&&p[0]==='expo-sharing')[1];assert.equal(sharing.ios.enabled,false);
   const media=result.plugins.find(p=>Array.isArray(p)&&p[0]==='expo-media-library')[1];assert.match(media.savePhotosPermission,/付款通知圖片儲存至相簿/);assert.deepEqual(media.granularPermissions,[]);assert.equal(media.isAccessMediaLocationEnabled,false);
 });

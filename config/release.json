@@ -1,0 +1,10 @@
+{
+  "iosBuildNumber": "1",
+  "iosBuildNumberConfirmedUnused": true,
+  "easProjectId": "f6b5d95f-789e-43dd-8066-d386cf2e800a",
+  "iconPath": "./assets/branding/app-icon.png",
+  "privacyPolicyUrl": "https://ordermori-site.vercel.app/privacy/",
+  "supportUrl": "https://ordermori-site.vercel.app/support/",
+  "privacyPolicyUrlEn": "https://ordermori-site.vercel.app/en/privacy/",
+  "supportUrlEn": "https://ordermori-site.vercel.app/en/support/"
+}
