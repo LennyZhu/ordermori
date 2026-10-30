@@ -3740,5 +3740,50 @@ export const catalog = [
   "zh": "本月 15 張免費訂單已用完。下月將重新獲得 15 張額度；歷史訂單及草稿仍可使用。可了解 OrderMori Pro 永久解鎖。",
   "en": "All 15 free orders for this month have been used. You will receive 15 new slots next month. Your history and drafts remain available. Explore the lifetime OrderMori Pro unlock."
 },
-{ "id": "p4d_unbranded", "zh": "無 OrderMori 署名", "en": "Without OrderMori branding" }
+{ "id": "p4d_unbranded", "zh": "無 OrderMori 署名", "en": "Without OrderMori branding" },
+{
+  "id": "release_0",
+  "zh": "私隱政策",
+  "en": "Privacy Policy"
+},
+{
+  "id": "release_1",
+  "zh": "未能開啟私隱政策",
+  "en": "Unable to open the privacy policy"
+},
+{
+  "id": "release_2",
+  "zh": "請檢查網絡後重試。",
+  "en": "Check your connection and try again."
+},
+{
+  "id": "release_3",
+  "zh": "網址待提供",
+  "en": "Link not yet available"
+},
+{
+  "id": "release_4",
+  "zh": "正在開啟…",
+  "en": "Opening…"
+},
+{
+  "id": "release_5",
+  "zh": "了解資料儲存、使用及私隱選擇",
+  "en": "Data storage, use and your privacy choices"
+},
+{
+  "id": "release_support",
+  "zh": "技術支援",
+  "en": "Support"
+},
+{
+  "id": "release_support_error",
+  "zh": "未能開啟技術支援",
+  "en": "Unable to open support"
+},
+{
+  "id": "release_support_description",
+  "zh": "使用說明、常見問題及聯絡開發者",
+  "en": "Guides, FAQs and contact the developer"
+}
 ] as const;

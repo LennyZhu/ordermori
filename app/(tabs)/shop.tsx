@@ -12,6 +12,7 @@ import { FREE_LIMIT, errorMessage } from '../../src/domain/model';
 import { QUOTA_CLOCK_ERROR } from '../../src/domain/quota';
 import { ErrorNotice, Loading, color, s } from '../../src/ui/common';
 import { ActionButton, CompactField, SectionHeading, e } from '../../src/ui/editorial';
+import { PrivacyPolicyLink, SupportLink } from '../../src/ui/PrivacyPolicyLink';
 
 export default function ShopScreen() {
   const { preference } = useLanguage();
@@ -101,6 +102,8 @@ export default function ShopScreen() {
           <Pressable accessibilityRole="button" onPress={() => router.push('/shop/pro')} style={{ minHeight: 44, justifyContent: 'center' }}><Text style={e.fieldLabel}>{tr('了解 OrderMori Pro')}</Text></Pressable>
           {clockRollback && <Text style={e.caption}>{trMessage(QUOTA_CLOCK_ERROR)}</Text>}
         </View>}
+        <PrivacyPolicyLink />
+        <SupportLink />
         <View style={{ gap: 8 }}><View style={e.row}><Ionicons name="lock-closed-outline" size={15} color={color.muted} /><Text style={e.fieldLabel}>{tr`本機資料，無需登入`}</Text></View>
           <Text style={e.caption}>{tr`資料只儲存在此裝置，請自行保管備份；刪除 App 將移除本機資料。`}</Text></View>
       </ScrollView>
