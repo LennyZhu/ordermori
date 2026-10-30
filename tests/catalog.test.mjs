@@ -96,16 +96,16 @@ test('price changes/deletion never rewrite saved orders, draft snapshots, paymen
   }finally{f.close();}
 });
 
-test('v6 -> v7 on fresh and original historical trigger variants is forward-only and idempotent',async()=>{
+test('v6 -> current on fresh and original historical trigger variants is forward-only and idempotent',async()=>{
   for(const legacy of [false,true]){
     const db=new DatabaseSync(':memory:');try{
       const p=adapter(db);await createSchema(p,6,legacy,false,legacy);
       db.prepare('INSERT INTO shops VALUES(?,?,?,?)').run('shop','合成舊店','',date);db.prepare('INSERT INTO app_state(id,profile_id,active_shop_id) VALUES(1,?,?)').run('profile','shop');
-      const old=db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY name").all();
+      const old=db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE sql IS NOT NULL AND NOT (type='table' AND name IN ('notice_files','notice_preferences')) ORDER BY name").all();
       assert.equal(await checkSchema(p,reference),6);await p.exec('PRAGMA query_only=OFF');const store=new OrderStore(p,randomUUID);await store.initialize();await store.initialize();
-      assert.equal(db.prepare('PRAGMA user_version').get().user_version,7);assert.deepEqual(await store.listProducts(),[]);
-      assert.deepEqual(db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'catalog_products%' ORDER BY name").all(),old);
-      assert.equal(await checkSchema(p,reference),7);
+      assert.equal(db.prepare('PRAGMA user_version').get().user_version,SCHEMA_VERSION);assert.deepEqual(await store.listProducts(),[]);
+      assert.deepEqual(db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'catalog_products%' AND NOT (type='table' AND name IN ('notice_files','notice_preferences')) ORDER BY name").all(),old);
+      assert.equal(await checkSchema(p,reference),SCHEMA_VERSION);
     }finally{db.close();}
   }
 });
@@ -117,15 +117,15 @@ async function packAndRead(path,data,legacy) {
   const parsed=parseManifest(files['manifest.json'].toString(),entries);assert.equal(sha(files['data.sqlite']),parsed.files[0].sha256);if(data)verifySummary(parsed,validateData(data));return {files,parsed};
 }
 
-test('v7 catalog participates in actual WAL snapshot/archive/import/restore and rollback',async()=>{
+test('current catalog participates in actual WAL snapshot/archive/import/restore and rollback',async()=>{
   const dir=mkdtempSync(join(tmpdir(),'ordermori-catalog-backup-')),f=await fixture(join(dir,'live.sqlite')),target=await fixture();try{
     const first=await f.store.saveProduct({name:'合成 Candle',price:'29.99'});await f.store.saveProduct({name:'髮圈',price:'58.00'});
     const data=await readBackupData(adapter(f.db));assert.equal(validateData(data).products,2);
     execFileSync('/usr/bin/python3',['-c','import sqlite3,sys\ns=sqlite3.connect(sys.argv[1]);d=sqlite3.connect(sys.argv[2]);s.backup(d);d.close();s.close()',join(dir,'live.sqlite'),join(dir,'snapshot.sqlite')]);
-    const {files,parsed}=await packAndRead(join(dir,'snapshot.sqlite'),data);assert.equal(parsed.version,1);assert.equal(parsed.schemaVersion,7);assert.equal(parsed.summary.products,2);
+    const {files,parsed}=await packAndRead(join(dir,'snapshot.sqlite'),data);assert.equal(parsed.version,1);assert.equal(parsed.schemaVersion,SCHEMA_VERSION);assert.equal(parsed.summary.products,2);
     writeFileSync(join(dir,'import.sqlite'),files['data.sqlite']);const copy=new DatabaseSync(join(dir,'import.sqlite'));
     try{
-      const p=adapter(copy);assert.equal(await checkSchema(p,reference),7);await migrateInspected(p);const imported=await readBackupData(p);
+      const p=adapter(copy);assert.equal(await checkSchema(p,reference),SCHEMA_VERSION);await migrateInspected(p);const imported=await readBackupData(p);
       const before=await readBackupData(adapter(target.db));await assert.rejects(target.store.maintenance(db=>replaceData(db,imported,randomUUID(),randomUUID(),date,async()=>{throw Error('synthetic failure');})));assert.deepEqual(await readBackupData(adapter(target.db)),before);
       await target.store.maintenance(db=>replaceData(db,imported,randomUUID(),randomUUID(),date));assert.deepEqual(await target.store.listProducts(),await f.store.listProducts());assert.equal((await target.store.getProduct(first)).unit_price_cents,2999);
     }finally{copy.close();}
@@ -184,6 +184,6 @@ test('v7 migration failure rolls back its new table/index and keeps the v6 busin
     db.prepare('INSERT INTO shops VALUES(?,?,?,?)').run('shop','合成舊店','',date);db.prepare('INSERT INTO app_state(id,profile_id,active_shop_id) VALUES(1,?,?)').run('profile','shop');
     const before=db.prepare('SELECT * FROM app_state').all();const broken={...p,exec:async sql=>{await p.exec(sql);if(sql.includes('CREATE TABLE catalog_products'))throw Error('synthetic v7 write failure');}};
     await assert.rejects(new OrderStore(broken,randomUUID).initialize());assert.equal(db.prepare('PRAGMA user_version').get().user_version,6);assert.equal(db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name LIKE 'catalog_products%'").get().n,0);assert.deepEqual(db.prepare('SELECT * FROM app_state').all(),before);
-    await new OrderStore(p,randomUUID).initialize();assert.equal(db.prepare('PRAGMA user_version').get().user_version,7);
+    await new OrderStore(p,randomUUID).initialize();assert.equal(db.prepare('PRAGMA user_version').get().user_version,SCHEMA_VERSION);
   }finally{db.close();}
 });

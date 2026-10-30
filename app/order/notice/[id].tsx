@@ -2,14 +2,14 @@ import { tr, trMessage } from "../../../src/i18n";
 import { useLanguage } from "../../../src/i18n/react";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { ComponentRef, ReactNode } from 'react';
-import { Alert, AppState, Image, Pressable, ScrollView, Text, UIManager, View, useWindowDimensions } from 'react-native';
+import { ActionSheetIOS, Alert, AppState, Image, Platform, Pressable, ScrollView, Text, UIManager, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useApp } from '../../../src/AppProvider';
 import { DomainError, editable, errorMessage } from '../../../src/domain/model';
-import { buildNotice, noticeProblems, noticeSourceKey, templateName, NOTICE_TEMPLATES } from '../../../src/domain/notice';
-import type { NoticeContext, NoticeDocument, NoticeFileRecord, NoticePreferences, NoticeTemplate } from '../../../src/domain/notice';
+import { buildNotice, firstNoticeLocale, noticeFileLocale, noticeProblems, noticeSourceKey, templateName, noticeLocaleName, NOTICE_LOCALES, NOTICE_TEMPLATES } from '../../../src/domain/notice';
+import type { NoticeContext, NoticeDocument, NoticeFileRecord, NoticePreferences, NoticeLocale, NoticeTemplate } from '../../../src/domain/notice';
 import { noticeFailure } from '../../../src/domain/noticeDiagnostics';
 import { canSaveNoticePreview, initialNoticePreview, noticePreviewReducer, noticeRenderIdentity } from '../../../src/domain/noticePreviewState';
 import { persistNoticePng } from '../../../src/data/noticeFiles';
@@ -22,17 +22,28 @@ import { ActionButton, TextAction, e } from '../../../src/ui/editorial';
 import { ErrorNotice, Loading, color, s } from '../../../src/ui/common';
 
 export default function NoticeScreen() {
-  useLanguage();
+  const { locale: appLocale } = useLanguage();
+  const initialLocale = useRef(appLocale);
   const { id } = useLocalSearchParams<{ id: string }>(); const { store, version } = useApp(); const router = useRouter();
   const [context, setContext] = useState<NoticeContext | null>(null); const [files, setFiles] = useState<NoticeFileRecord[]>([]);
   const [error, setError] = useState(''); const [retry, setRetry] = useState(0); const [busy, setBusy] = useState(false); const [history, setHistory] = useState(false);
-  const [selection, setSelection] = useState<NoticeTemplate | null>(null); const [switchFailed, setSwitchFailed] = useState(false);
+  const [selection, setSelection] = useState<{template: NoticeTemplate; locale: NoticeLocale} | null>(null); const [switchFailed, setSwitchFailed] = useState(false);
   const lock = useRef(false); const reloadEpoch = useRef(0); const alive = useRef(true); const logTemplate = useRef<NoticeTemplate>('editorial'); const { width } = useWindowDimensions();
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useFocusEffect(useCallback(() => { setRetry((n) => n + 1); }, []));
   useEffect(() => {
     let active = true; const epoch = ++reloadEpoch.current;
-    Promise.all([store.getNoticeContext(id), store.listNoticeFiles(id).catch((cause: unknown) => { throw noticeFailure('file-list', logTemplate.current, cause); })]).then(([next, saved]) => { if (active && epoch === reloadEpoch.current) { setContext(next); setFiles(saved); setError(''); } }).catch((cause: unknown) => { if (active && epoch === reloadEpoch.current) setError(noticeFailure('settings-read', logTemplate.current, cause).message); });
+    void (async () => {
+      let [next, saved] = await Promise.all([store.getNoticeContext(id), store.listNoticeFiles(id).catch((cause: unknown) => { throw noticeFailure('file-list', logTemplate.current, cause); })]);
+      if (!active || epoch !== reloadEpoch.current) return;
+      const locale = firstNoticeLocale(next, saved, initialLocale.current);
+      if (locale !== next.preferences.locale) {
+        try { await store.saveNoticePreferences(id, next.detail.order.revision, next.preferences.revision, { ...next.preferences, locale }); }
+        catch (cause) { if (!(cause instanceof DomainError) || !['conflict','locked'].includes(cause.code)) throw cause; }
+        [next, saved] = await Promise.all([store.getNoticeContext(id), store.listNoticeFiles(id)]);
+      }
+      if (active && epoch === reloadEpoch.current) { setContext(next); setFiles(saved); setError(''); }
+    })().catch((cause: unknown) => { if (active && epoch === reloadEpoch.current) setError(noticeFailure('settings-read', logTemplate.current, cause).message); });
     return () => { active = false; };
   }, [id, store, version, retry]);
   const derived = useMemo(() => {
@@ -41,9 +52,9 @@ export default function NoticeScreen() {
     try { return { document: problems.length ? null : buildNotice(context), problems }; }
     catch (cause) { return { document: null, problems: [errorMessage(cause)] }; }
   }, [context]);
-  async function preferences(input: Pick<NoticePreferences, 'template' | 'includeNote'> & { confirmedNote?: string }) {
+  async function preferences(input: Pick<NoticePreferences, 'template' | 'locale' | 'includeNote'> & { confirmedNote?: string }) {
     if (!context || lock.current) return; lock.current = true; const epoch = ++reloadEpoch.current;
-    logTemplate.current = input.template; setSelection(input.template); setSwitchFailed(false); setBusy(true); setError('');
+    logTemplate.current = input.template; setSelection({template: input.template,locale: input.locale}); setSwitchFailed(false); setBusy(true); setError('');
     let wrote = false;
     try {
       await store.saveNoticePreferences(id, context.detail.order.revision, context.preferences.revision, input);
@@ -81,17 +92,45 @@ export default function NoticeScreen() {
   if (!context || context.detail.order.id !== id) return error ? <View style={e.content}><ErrorNotice message={trMessage(error)} retry={() => setRetry((n) => n + 1)} /></View> : <Loading />;
   const canEdit = editable(context.detail.order);
   const nativeReady = !!UIManager.getViewManagerConfig('RNSVGSvgView');
-  const selectedTemplate = selection ?? context.preferences.template;
-  const currentFile = derived.document ? files.find((file) => file.orderId === derived.document!.orderId && file.shopId === derived.document!.shopId && file.orderRevision === derived.document!.orderRevision && file.preferencesRevision === derived.document!.preferencesRevision && file.template === derived.document!.template) : undefined;
-  const selectionPending = busy || switchFailed || selectedTemplate !== context.preferences.template;
+  const selectedTemplate = selection?.template ?? context.preferences.template;
+  const selectedLocale = selection?.locale ?? context.preferences.locale;
+  const currentFile = derived.document ? files.find((file) => file.orderId === derived.document!.orderId && file.shopId === derived.document!.shopId && file.orderRevision === derived.document!.orderRevision && file.preferencesRevision === derived.document!.preferencesRevision && file.template === derived.document!.template && noticeFileLocale(file) === derived.document!.locale) : undefined;
+  const selectionPending = busy || switchFailed || selectedTemplate !== context.preferences.template || selectedLocale !== context.preferences.locale;
+  function chooseNoticeLanguage() {
+    if (!context || busy || !canEdit || lock.current) return;
+    const choose = (index: number) => {
+      const locale = NOTICE_LOCALES[index];
+      if (locale && alive.current && (locale !== context.preferences.locale || switchFailed)) void preferences({ ...context.preferences, template: selectedTemplate, locale });
+    };
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions({
+        title: tr('通知語言'), options: [...NOTICE_LOCALES.map((locale) => tr(noticeLocaleName[locale])), tr('取消')],
+        cancelButtonIndex: NOTICE_LOCALES.length, tintColor: color.ink, userInterfaceStyle: 'light',
+      }, choose);
+    } else {
+      Alert.alert(tr('通知語言'), undefined, [
+        ...NOTICE_LOCALES.map((locale, index) => ({ text: tr(noticeLocaleName[locale]), onPress: () => choose(index) })),
+        { text: tr('取消'), style: 'cancel' },
+      ]);
+    }
+  }
   const controls = <View style={{ paddingHorizontal: 20, paddingTop: 10, gap: 8 }}>
       <View style={[e.row, { gap: 3, backgroundColor: color.mutedSurface, borderRadius: 10, padding: 3 }]}>
         {NOTICE_TEMPLATES.map((template) => <Pressable key={template} accessibilityRole="radio" accessibilityState={{ checked: selectedTemplate === template, disabled: busy || !canEdit }}
-          disabled={busy || !canEdit} onPress={() => { if (template !== context.preferences.template || switchFailed) void preferences({ ...context.preferences, template }); }}
+          disabled={busy || !canEdit} onPress={() => { if (template !== context.preferences.template || switchFailed) void preferences({ ...context.preferences, template, locale: selectedLocale }); }}
           style={({ pressed }) => [{ flex: 1, minHeight: 44, justifyContent: 'center', alignItems: 'center', padding: 6, borderRadius: 8, backgroundColor: template === selectedTemplate ? color.ink : 'transparent' }, pressed && e.pressed]}>
           <Text style={[e.actionText, { color: template === selectedTemplate ? color.surface : color.ink }]}>{tr(templateName[template])}</Text>
         </Pressable>)}
       </View>
+      <Pressable accessibilityRole="button" accessibilityLabel={tr`通知語言：${tr(noticeLocaleName[selectedLocale])}`} accessibilityState={{ disabled: busy || !canEdit }}
+        disabled={busy || !canEdit} onPress={chooseNoticeLanguage}
+        style={({ pressed }) => [e.row, { minHeight: 44, justifyContent: 'space-between' }, pressed && e.pressed]}>
+        <Text style={[e.caption, { flexShrink: 1 }]}>{tr('通知語言')}</Text>
+        <View style={[e.row, { gap: 6, flexShrink: 1 }]}>
+          <Text style={[e.actionText, { textAlign: 'right' }]}>{tr(noticeLocaleName[selectedLocale])}</Text>
+          <Ionicons name="chevron-down" size={15} color={color.muted} />
+        </View>
+      </Pressable>
       <Text style={e.caption}>{tr`兩款模板均免費 · 只讀取已保存的訂單快照`}</Text>
       {!!context.detail.order.note && <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: context.preferences.includeNote, disabled: busy || !canEdit }} disabled={busy || !canEdit} onPress={confirmNote} style={[e.row, { minHeight: 44 }]}>
         <Ionicons name={context.preferences.includeNote ? 'checkbox' : 'square-outline'} size={21} color={color.ink} /><Text style={[e.caption, { flex: 1 }]}>{tr`包含已確認給客人看的訂單備註`}</Text>
@@ -103,8 +142,8 @@ export default function NoticeScreen() {
   return <SafeAreaView edges={['left', 'right', 'bottom']} style={s.page}>
     {history ? <ScrollView>{controls}{historyControl}</ScrollView> : selectionPending ? <ScrollView>{controls}<View style={e.content}>
       <Text accessibilityLiveRegion="polite" style={e.body}>{busy ? tr`正在準備${tr(templateName[selectedTemplate])}…` : tr`${tr(templateName[selectedTemplate])}尚未完成預覽，沒有沿用其他模板圖片。`}</Text>
-      {!busy && <><TextAction title={tr("重試所選模板")} onPress={() => { void preferences({ ...context.preferences, template: selectedTemplate }); }} /><TextAction title={tr`返回已儲存的${tr(templateName[context.preferences.template])}`} onPress={() => { setSelection(null); setSwitchFailed(false); setError(''); }} /></>}
-    </View>{historyControl}</ScrollView> : derived.document && nativeReady ? <NoticeWorkspace key={`${derived.document.orderId}:${derived.document.orderRevision}:${derived.document.preferencesRevision}:${width}`} document={derived.document} file={currentFile} width={width - 40} onSaved={() => setRetry((n) => n + 1)} header={controls} footer={historyControl} /> :
+      {!busy && <><TextAction title={tr("重試所選模板")} onPress={() => { void preferences({ ...context.preferences, template: selectedTemplate, locale: selectedLocale }); }} /><TextAction title={tr`返回已儲存的${tr(templateName[context.preferences.template])}`} onPress={() => { setSelection(null); setSwitchFailed(false); setError(''); }} /></>}
+    </View>{historyControl}</ScrollView> : derived.document && nativeReady ? <NoticeWorkspace key={`${derived.document.orderId}:${derived.document.orderRevision}:${derived.document.preferencesRevision}:${derived.document.locale}:${width}`} document={derived.document} file={currentFile} width={width - 40} onSaved={() => setRetry((n) => n + 1)} header={controls} footer={historyControl} /> :
       <ScrollView contentContainerStyle={{ paddingBottom: 16 }}>{controls}<View style={e.content}>
         {derived.problems.map((problem) => <Text key={problem} style={e.body}>{trMessage(problem)}</Text>)}
         {!nativeReady && <Text style={e.body}>{tr`請先重新構建包含 view-shot 及 SVG 的 Development Build，才能生成付款通知。`}</Text>}

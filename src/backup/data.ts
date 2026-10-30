@@ -1,3 +1,4 @@
+import { isNoticeLocale } from '../domain/noticeCopy.ts';
 import { validProductValues } from '../domain/catalog.ts';
 import { MIGRATIONS, SCHEMA_VERSION } from '../data/migrations.ts';
 import type { DatabasePort } from '../data/store.ts';
@@ -147,6 +148,8 @@ export function validateData(data: BackupData): BackupSummary {
     if (draft.input.payment) { exactKeys(draft.input.payment, PAYMENT_KEYS); normalizePayment(draft.input.payment.kind, draft.input.payment); if (draft.input.payment.shopId !== shop.id) failBackup('草稿收款歸屬無效。'); }
   }
   for (const product of data.catalog_products) if (!validProductValues(product.name,product.unit_price_cents) || !Number.isSafeInteger(product.revision) || Number(product.revision) < 1) failBackup('備份常用商品名稱或單價無效。');
+  for (const row of data.notice_preferences) if (!isNoticeLocale(row.output_locale)) failBackup('備份付款通知語言無效。');
+  for (const row of data.notice_files) if (!isNoticeLocale(row.locale)) failBackup('備份付款通知語言無效。');
   const media = mediaReferences(data);
   return { orders: data.orders.length, items: data.order_items.length, media: media.length, createdCount: Number(state.created_count), profileId: String(state.profile_id), schemaVersion: SCHEMA_VERSION, products: data.catalog_products.length };
 }

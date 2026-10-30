@@ -7,7 +7,7 @@ import type { OrderStore } from '../data/store';
 import { removeSavedNotice, verifyNoticeFile } from '../data/noticeFiles';
 import { errorMessage } from '../domain/model';
 import { noticeFailure } from '../domain/noticeDiagnostics';
-import { noticeDate, templateName } from '../domain/notice';
+import { noticeDate, noticeFileLocale, noticeLocaleName, templateName } from '../domain/notice';
 import type { NoticeFileRecord } from '../domain/notice';
 import { ErrorNotice, s } from './common';
 import { TextAction, e } from './editorial';
@@ -50,7 +50,7 @@ export function NoticeFilesModal({ store, files, onClose, onRemoved }: { store: 
       </> : <ScrollView contentContainerStyle={e.content}>
         {!files.length && <Text style={e.caption}>{tr`尚未儲存付款通知 PNG。`}</Text>}
         {files.map((file) => <View key={file.id} style={{ gap: 4, borderBottomWidth: 0.5, borderBottomColor: '#E8E6E1', paddingBottom: 12 }}>
-          <Text style={e.fieldLabel}>{tr(templateName[file.template])} · {noticeDate(file.createdAt)}</Text>
+          <Text style={e.fieldLabel}>{tr(templateName[file.template])} · {tr(noticeLocaleName[noticeFileLocale(file)])} · {noticeDate(file.createdAt)}</Text>
           <Text style={e.caption}>{file.width} × {file.height} px · {(file.bytes / 1024).toFixed(0)} KB</Text>
           <View style={[e.rowWrap, { justifyContent: 'space-between' }]}><TextAction title={tr("查看 PNG")} icon="image-outline" disabled={busy} onPress={() => { void open(file); }} /><TextAction title={tr("移除")} danger disabled={busy} onPress={() => remove(file)} /></View>
         </View>)}

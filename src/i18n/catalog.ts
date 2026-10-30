@@ -3444,5 +3444,25 @@ export const catalog = [
     "id": "x16",
     "zh": "明確儲存建立訂單",
     "en": "Order explicitly saved and created"
-  }
+  },
+{
+  "id": "b4_notice_language",
+  "zh": "通知語言",
+  "en": "Notice language"
+},
+{
+  "id": "b4_notice_zh",
+  "zh": "繁體中文",
+  "en": "Traditional Chinese"
+},
+{
+  "id": "b4_notice_language_accessibility",
+  "zh": "通知語言：%{v0}",
+  "en": "Notice language: %{v0}"
+},
+{
+  "id": "b4_notice_backup_language",
+  "zh": "備份付款通知語言無效。",
+  "en": "Invalid payment notice language in backup."
+}
 ] as const;

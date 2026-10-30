@@ -13,6 +13,7 @@ export interface PaperObservation {
   decorationReady: () => void;
 }
 export const NoticePaper = memo(function NoticePaper({ document: d, width, observe }: { document: NoticeDocument; width: number; observe: PaperObservation }) {
+  const english = d.locale === 'en';
   const r = width / 360; const soft = d.template === 'soft'; const b = noticeTextBlocks(d);
   const ink = soft ? '#49362B' : '#20201F', muted = soft ? '#806F60' : '#686762', line = soft ? '#E5D9CA' : '#DDDBD6';
   const paper = soft ? '#FCF8F1' : '#FFFFFF';
@@ -84,7 +85,7 @@ export const NoticePaper = memo(function NoticePaper({ document: d, width, obser
           {b.bank && <>{['bank', 'payee', 'account'].map((key) => <View key={key} style={{ gap: gap(2) }}><Copy id={`${key}Label`} size={10.5} style={{ color: muted }} /><Copy id={key} size={13} /></View>)}</>}
           </View>}
         </View>
-        {d.qr && <View style={{ alignItems: 'center', padding: gap(8), backgroundColor: '#FFFFFF', borderWidth: StyleSheet.hairlineWidth, borderColor: line, borderRadius: gap(6) }}>
+        {d.qr && <View style={{ ...(english ? { width: qrWidth + gap(16) + StyleSheet.hairlineWidth * 2 } : {}), alignItems: 'center', padding: gap(8), backgroundColor: '#FFFFFF', borderWidth: StyleSheet.hairlineWidth, borderColor: line, borderRadius: gap(6) }}>
           <Image source={{ uri: paymentAssetUri(d.qr) }} fadeDuration={0} resizeMode="contain" onLoad={observe.imageLoaded} onError={observe.imageFailed}
             style={{ width: qrWidth, height: qrWidth * d.qr.height / d.qr.width }} />
           <Copy id="qrLabel" size={8.5} style={{ color: muted, marginTop: gap(4), textAlign: 'center' }} />

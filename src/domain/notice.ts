@@ -1,17 +1,21 @@
-import { DomainError, countChars } from './model.ts';
+import { isNoticeLocale, noticeCopy, noticeShippingText } from './noticeCopy.ts';
+import type { NoticeLocale } from './noticeCopy.ts';
+import { DomainError, countChars, editable } from './model.ts';
 import type { Order, OrderDetail } from './model.ts';
 import { paymentIssues, paymentStatus, snapshotOf } from './payment.ts';
 import type { PaymentAsset, PaymentChoice } from './payment.ts';
+export { NOTICE_LOCALES, noticeLocaleName } from './noticeCopy.ts';
+export type { NoticeLocale } from './noticeCopy.ts';
 
 export const NOTICE_TEMPLATES = ['editorial', 'soft'] as const;
 export type NoticeTemplate = typeof NOTICE_TEMPLATES[number];
 export const templateName: Record<NoticeTemplate, string> = { editorial: '黑白極簡', soft: '韓系柔和' };
-export interface NoticePreferences { template: NoticeTemplate; includeNote: boolean; noteSnapshot: string; locale: 'zh-HK'; revision: number }
+export interface NoticePreferences { template: NoticeTemplate; includeNote: boolean; noteSnapshot: string; locale: NoticeLocale; revision: number }
 export const defaultNoticePreferences = (): NoticePreferences => ({ template: 'editorial', includeNote: false, noteSnapshot: '', locale: 'zh-HK', revision: 0 });
 export interface NoticeContext { detail: OrderDetail; payment: PaymentChoice | null; preferences: NoticePreferences }
 export interface NoticeDocument {
   version: 1; orderId: string; shopId: string; orderRevision: number; preferencesRevision: number;
-  template: NoticeTemplate; locale: 'zh-HK'; number: string; createdAt: string; shopName: string; shopDescription: string; buyer: string;
+  template: NoticeTemplate; locale: NoticeLocale; number: string; createdAt: string; shopName: string; shopDescription: string; buyer: string;
   items: { id: string; position: number; name: string; quantity: number; unitCents: number; lineCents: number }[];
   subtotalCents: number; discountCents: number; shippingCents: number; totalCents: number;
   shipping: Order['shipping_method']; shippingText: string; customerNote: string;
@@ -21,7 +25,7 @@ export interface NoticeDocument {
 }
 export interface NoticeFileRecord {
   id: string; orderId: string; shopId: string; orderRevision: number; preferencesRevision: number;
-  template: NoticeTemplate; relativePath: string; width: number; height: number; bytes: number; sha256: string; dataHash: string; createdAt: string;
+  template: NoticeTemplate; locale?: NoticeLocale; relativePath: string; width: number; height: number; bytes: number; sha256: string; dataHash: string; createdAt: string;
 }
 export function noticeStateReason(order: Order): string | null {
   if (order.order_status !== 'active') return '已取消訂單不能產生新的付款通知。';
@@ -45,7 +49,7 @@ export function buildNotice(context: NoticeContext): NoticeDocument {
   const problems = noticeProblems(context); if (problems.length) throw new DomainError('notice', problems.join('\n'));
   const { detail, preferences, payment } = context; const o = detail.order;
   if (!payment || !detail.payment || payment.snapshot.shopId !== o.shop_id || JSON.stringify(snapshotOf(detail.payment)) !== JSON.stringify(snapshotOf(payment.snapshot))) throw new DomainError('notice', '收款快照不一致，請重新開啟。');
-  if (!NOTICE_TEMPLATES.includes(preferences.template) || preferences.locale !== 'zh-HK' || typeof preferences.includeNote !== 'boolean') throw new DomainError('notice', '付款通知設定不支援。');
+  if (!NOTICE_TEMPLATES.includes(preferences.template) || !isNoticeLocale(preferences.locale) || typeof preferences.includeNote !== 'boolean') throw new DomainError('notice', '付款通知設定不支援。');
   const items = [...detail.items].sort((a, b) => a.position - b.position);
   const cents = (n: number) => Number.isSafeInteger(n) && n >= 0;
   if (!items.length || items.length > 20 || !o.buyer_identifier.trim() || !Number.isFinite(Date.parse(o.created_at)) ||
@@ -63,9 +67,15 @@ export function buildNotice(context: NoticeContext): NoticeDocument {
     shopName: o.shop_name_snapshot, shopDescription: o.shop_description_snapshot, buyer: o.buyer_identifier,
     items: items.map((i) => ({ id: i.id, position: i.position, name: i.name_snapshot, quantity: i.quantity, unitCents: i.unit_price_cents, lineCents: i.line_total_cents })),
     subtotalCents: o.subtotal_cents, discountCents: o.discount_cents, shippingCents: o.shipping_cents, totalCents: o.total_cents,
-    shipping: o.shipping_method, shippingText: { included: '包郵', sf_collect: '順豐運費到付 · 運費另付予順豐，不計入本單應付總額', pickup: '面交', custom: '自訂配送 · 運費由商家收取' }[o.shipping_method],
+    shipping: o.shipping_method, shippingText: noticeShippingText(preferences.locale, o.shipping_method),
     customerNote: preferences.includeNote ? preferences.noteSnapshot : '', payment: snapshotOf(detail.payment), qr: payment.asset ? { ...payment.asset } : null, branding: 'Made with OrderMori',
   };
+}
+// Missing locale is accepted only for pre-v8 in-memory file records. SQLite v8
+// assigns zh-HK to every legacy file without changing its bytes or data hash.
+export const noticeFileLocale = (file: Pick<NoticeFileRecord,'locale'>): NoticeLocale => file.locale ?? 'zh-HK';
+export function firstNoticeLocale(context: NoticeContext, files: readonly NoticeFileRecord[], appLocale: NoticeLocale): NoticeLocale {
+  return context.preferences.revision === 0 && files.length === 0 && editable(context.detail.order) && !noticeStateReason(context.detail.order) ? appLocale : context.preferences.locale;
 }
 export const noticeSourceKey = (document: NoticeDocument): string => JSON.stringify(document);
 export function noticeMoney(cents: number): string {
@@ -77,29 +87,30 @@ export function noticeDate(iso: string): string {
   return `${date.getUTCFullYear()}/${String(date.getUTCMonth() + 1).padStart(2, '0')}/${String(date.getUTCDate()).padStart(2, '0')} ${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')} HKT`;
 }
 export function noticeTextBlocks(d: NoticeDocument): Record<string, string> {
+  const c = noticeCopy[d.locale];
   const blocks: Record<string, string> = {
-    shop: d.shopName, title: '付款通知 / Payment Notice', number: d.number, date: noticeDate(d.createdAt),
-    thanks: 'Thank you', greeting: '感謝你的支持', buyerLabel: '買家', buyer: d.buyer,
-    shippingLabel: '配送方式', shipping: d.shippingText,
-    itemLabel: '商品', quantityLabel: '數量', unitLabel: '單價', lineLabel: '金額',
-    subtotalLabel: '商品小計', subtotal: noticeMoney(d.subtotalCents), totalLabel: '應付總額', total: noticeMoney(d.totalCents),
-    paymentTitle: d.payment.kind === 'fps' ? '請使用 FPS 轉數快付款' : d.payment.kind === 'payme' ? '請使用 PayMe 付款' : '銀行轉帳資料',
-    reminder: '付款後請通知商家核對。',
-    legal: '僅供付款通知，並非正式收據或已收款確認。App 不驗證到帳。', brand: d.branding,
+    shop: d.shopName, title: c.title, number: d.locale === 'en' ? `Order no. ${d.number}` : d.number, date: noticeDate(d.createdAt),
+    thanks: c.thanks, greeting: c.greeting, buyerLabel: c.buyerLabel, buyer: d.buyer,
+    shippingLabel: c.shippingLabel, shipping: d.shippingText,
+    itemLabel: c.itemLabel, quantityLabel: c.quantityLabel, unitLabel: c.unitLabel, lineLabel: c.lineLabel,
+    subtotalLabel: c.subtotalLabel, subtotal: noticeMoney(d.subtotalCents), totalLabel: c.totalLabel, total: noticeMoney(d.totalCents),
+    paymentTitle: d.payment.kind === 'fps' ? c.fpsTitle : d.payment.kind === 'payme' ? c.paymeTitle : c.bankTitle,
+    reminder: c.reminder,
+    legal: c.legal, brand: d.branding,
   };
   if (d.shopDescription.trim()) blocks.description = d.shopDescription;
-  if (d.discountCents > 0) { blocks.discountLabel = '固定折扣'; blocks.discount = `− ${noticeMoney(d.discountCents)}`; }
-  if (d.shipping === 'custom') { blocks.deliveryLabel = '商家收取運費'; blocks.delivery = noticeMoney(d.shippingCents); }
+  if (d.discountCents > 0) { blocks.discountLabel = c.discountLabel; blocks.discount = `− ${noticeMoney(d.discountCents)}`; }
+  if (d.shipping === 'custom') { blocks.deliveryLabel = c.deliveryLabel; blocks.delivery = noticeMoney(d.shippingCents); }
   for (const [n, item] of d.items.entries()) {
     blocks[`item-${n}-serial`] = String(n + 1).padStart(2, '0'); blocks[`item-${n}-name`] = item.name;
     blocks[`item-${n}-quantity`] = String(item.quantity); blocks[`item-${n}-unit`] = noticeMoney(item.unitCents); blocks[`item-${n}-line`] = noticeMoney(item.lineCents);
   }
-  if (d.customerNote) { blocks.noteLabel = '給客人的備註'; blocks.note = d.customerNote; }
+  if (d.customerNote) { blocks.noteLabel = c.noteLabel; blocks.note = d.customerNote; }
   if (d.payment.kind === 'fps' && d.payment.fpsValue) {
-    blocks.paymentLabel = { id: 'FPS ID', phone: '已關聯 FPS 的電話', email: '已關聯 FPS 的電郵' }[d.payment.fpsType]; blocks.paymentValue = d.payment.fpsValue;
+    blocks.paymentLabel = { id: c.fpsId, phone: c.fpsPhone, email: c.fpsEmail }[d.payment.fpsType]; blocks.paymentValue = d.payment.fpsValue;
   } else if (d.payment.kind === 'bank') {
-    blocks.bankLabel = '銀行'; blocks.bank = d.payment.bankName; blocks.payeeLabel = '收款人'; blocks.payee = d.payment.accountName; blocks.accountLabel = '銀行帳號'; blocks.account = d.payment.accountNumber;
+    blocks.bankLabel = c.bankLabel; blocks.bank = d.payment.bankName; blocks.payeeLabel = c.payeeLabel; blocks.payee = d.payment.accountName; blocks.accountLabel = c.accountLabel; blocks.account = d.payment.accountNumber;
   }
-  if (d.qr) { blocks.qrLabel = '商家提供的官方收款圖片'; blocks.qrReminder = '收款碼可能包含固定金額，請核對收款對象及本單金額是否適用。'; }
+  if (d.qr) { blocks.qrLabel = c.qrLabel; blocks.qrReminder = c.qrReminder; }
   return blocks;
 }

@@ -52,7 +52,7 @@ export async function persistNoticePng(store: OrderStore, document: NoticeDocume
     const saved = await inspectNoticePng(target.uri);
     if (saved.sha256 !== original.sha256 || saved.bytes !== original.bytes || saved.width !== original.width || saved.height !== original.height) throw new DomainError('png', 'PNG 複製完整性檢查失敗，未保存。');
     const record: NoticeFileRecord = { id, orderId: document.orderId, shopId: document.shopId, orderRevision: document.orderRevision,
-      preferencesRevision: document.preferencesRevision, template: document.template, relativePath, ...saved,
+      preferencesRevision: document.preferencesRevision, template: document.template, locale: document.locale, relativePath, ...saved,
       dataHash: await digestStringAsync(CryptoDigestAlgorithm.SHA256, sourceKey), createdAt: new Date().toISOString() };
     await store.recordNoticeFile(record, sourceKey, active); return record;
   } catch (cause) {

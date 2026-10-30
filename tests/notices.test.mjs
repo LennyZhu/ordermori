@@ -143,7 +143,7 @@ test('output finalization rejects stale order/settings, cancellation and wrong o
     const next = buildNotice(await store.getNoticeContext(id)); assert.notEqual(noticeSourceKey(next), noticeSourceKey(document));
     const detail = await store.getOrder(id); await store.updateOrder(id, 1, { ...toInput(detail), note: '已改變' });
     await assert.rejects(store.recordNoticeFile(record(next, '3'), noticeSourceKey(next)));
-    assert.deepEqual((await store.listNoticeFiles(id))[0], file); assert.equal((await store.getHome()).createdCount, 1);
+    assert.deepEqual((await store.listNoticeFiles(id))[0], {...file,locale:'zh-HK'}); assert.equal((await store.getHome()).createdCount, 1);
   } finally { db.close(); }
 });
 

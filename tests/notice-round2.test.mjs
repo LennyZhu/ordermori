@@ -37,7 +37,8 @@ function legacyV3(missingColumn, includeNote = false, path = ':memory:') {
   const store = new OrderStore(port(db), () => 'synthetic-id', () => date); return { db, store };
 }
 const tables = ['orders','order_items','payment_methods','order_payment_snapshots','notice_files','app_state'];
-const rows = (db) => Object.fromEntries(tables.map((t) => [t,db.prepare(`SELECT * FROM ${t}`).all()]));
+// These regressions compare pre-v8 columns; bilingual metadata is tested separately.
+const rows = (db) => Object.fromEntries(tables.map((t) => [t,db.prepare(`SELECT * FROM ${t}`).all().map(row=>{if(t!=='notice_files')return row;const {locale: _locale,...legacy}=row;return legacy;})]));
 
 test('reproduces v3: default black preview works, first template write fails without note_snapshot; v4 repairs forwards', async () => {
   const { db, store } = legacyV3(true);
@@ -135,7 +136,7 @@ test('description Far is preserved from the snapshot and zero adjustments do not
     await store.initialize(); const document=buildNotice(await store.getNoticeContext('synthetic-order'));
     for (const template of ['editorial','soft']) { const copy=noticeTextBlocks({...document,template}); assert.equal(copy.description,'Far'); assert.equal(copy.discount,undefined); assert.equal(copy.delivery,undefined); assert.equal(copy.total,'HK$ 117.00'); assert.equal(copy.brand,'Made with OrderMori'); }
     assert.match(noticeTextBlocks(document).shipping,/另付予順豐/);
-    assert.equal(noticeRenderIdentity(document),'synthetic-order:1:0:editorial');
+    assert.equal(noticeRenderIdentity(document),'synthetic-order:1:0:editorial:zh-HK');
     const before=noticeSourceKey(document); noticeTextBlocks({...document,template:'soft'}); assert.equal(noticeSourceKey(document),before);
   } finally { db.close(); }
 });
