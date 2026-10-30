@@ -1,4 +1,5 @@
 import { isNoticeLocale } from '../domain/noticeCopy.ts';
+import { mergeQuotaEvidence, validateQuotaBackup } from './quota.ts';
 import { validProductValues } from '../domain/catalog.ts';
 import { MIGRATIONS, SCHEMA_VERSION } from '../data/migrations.ts';
 import type { DatabasePort } from '../data/store.ts';
@@ -11,12 +12,12 @@ import { failBackup, LIMITS } from './archive.ts';
 import { schemaDiagnostic, schemaDifferences } from './schemaDiagnostics.ts';
 import type { SchemaDiagnostic, SchemaDifference, SchemaEntry } from './schemaDiagnostics.ts';
 
-export const TABLES = ['shops', 'app_state', 'orders', 'order_items', 'drafts', 'status_history', 'creation_ledger', 'payment_assets', 'payment_methods', 'shop_payment_defaults', 'order_payment_snapshots', 'notice_preferences', 'notice_files', 'backup_state', 'restore_receipts', 'catalog_products'] as const;
+export const TABLES = ['shops', 'app_state', 'orders', 'order_items', 'drafts', 'status_history', 'creation_ledger', 'payment_assets', 'payment_methods', 'shop_payment_defaults', 'order_payment_snapshots', 'notice_preferences', 'notice_files', 'backup_state', 'restore_receipts', 'catalog_products', 'quota_state', 'quota_events'] as const;
 export type Table = typeof TABLES[number];
 export type Row = Record<string, string | number | null>;
 export type BackupData = Record<Table, Row[]>;
 export interface MediaRef { path: string; size: number; sha256: string; width: number; height: number }
-export interface BackupSummary { orders: number; items: number; media: number; createdCount: number; profileId: string; schemaVersion: number; products?: number }
+export interface BackupSummary { orders: number; items: number; media: number; createdCount: number; profileId: string; schemaVersion: number; products?: number; quotaPeriod?: string | null; quotaUsed?: number }
 export interface SchemaObject { type: string; name: string; tbl_name: string; sql: string }
 export const objects = (db: DatabasePort) => db.all<SchemaObject>("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE sql IS NOT NULL ORDER BY name");
 const schemaObjects = (db: DatabasePort) => db.all<SchemaEntry>('SELECT type,name,tbl_name,sql FROM main.sqlite_master ORDER BY name');
@@ -150,8 +151,10 @@ export function validateData(data: BackupData): BackupSummary {
   for (const product of data.catalog_products) if (!validProductValues(product.name,product.unit_price_cents) || !Number.isSafeInteger(product.revision) || Number(product.revision) < 1) failBackup('備份常用商品名稱或單價無效。');
   for (const row of data.notice_preferences) if (!isNoticeLocale(row.output_locale)) failBackup('備份付款通知語言無效。');
   for (const row of data.notice_files) if (!isNoticeLocale(row.locale)) failBackup('備份付款通知語言無效。');
+  validateQuotaBackup(data.quota_state, data.quota_events, data.orders);
   const media = mediaReferences(data);
-  return { orders: data.orders.length, items: data.order_items.length, media: media.length, createdCount: Number(state.created_count), profileId: String(state.profile_id), schemaVersion: SCHEMA_VERSION, products: data.catalog_products.length };
+  const quotaPeriod = data.quota_state[0].highest_period as string | null;
+  return { orders: data.orders.length, items: data.order_items.length, media: media.length, createdCount: Number(state.created_count), profileId: String(state.profile_id), schemaVersion: SCHEMA_VERSION, products: data.catalog_products.length, quotaPeriod, quotaUsed: quotaPeriod ? data.quota_events.filter(e => e.period === quotaPeriod).length : 0 };
 }
 export function mediaReferences(data: BackupData): MediaRef[] {
   for (const r of data.payment_assets) if (!['image/png','image/jpeg'].includes(String(r.mime)) || r.relative_path !== `payment-assets/${r.id}.${r.mime === 'image/png' ? 'png' : 'jpg'}` || Number(r.byte_count) > 20*1024*1024 || Number(r.width)*Number(r.height)>40000000 || Math.max(Number(r.width),Number(r.height))>12000) failBackup('備份收款圖片記錄無效。');
@@ -164,13 +167,14 @@ export function mediaReferences(data: BackupData): MediaRef[] {
 }
 export async function migrateInspected(db: DatabasePort) {
   await db.exec('PRAGMA query_only=OFF; PRAGMA foreign_keys=ON;');
-  await new OrderStore(db, () => failBackup('備份缺少原有本機檔案，未建立空白資料。')).initialize();
+  await new OrderStore(db, () => failBackup('備份缺少原有本機檔案，未建立空白資料。')).initialize({ activateQuota: false });
 }
 // Only trusted triggers from the ACTIVE app schema are temporarily removed,
 // inside the same transaction. This allows insertion of already-paid history.
 // Rollback restores both schema and old data, including counter/lock triggers.
 export async function replaceData(db: DatabasePort, imported: BackupData, generation: string, id: string, now: string, afterRows?: () => Promise<void>) {
   if (!/^[a-f0-9-]{36}$/.test(generation)) failBackup('還原暫存目錄無效。');
+  validateData(imported);
   await db.exec('BEGIN IMMEDIATE');
   try {
     const current = await readBackupData(db), local = current.app_state[0], incoming = imported.app_state[0];
@@ -178,7 +182,8 @@ export async function replaceData(db: DatabasePort, imported: BackupData, genera
     const seq = Math.max(Number(local.order_number_seq), Number(incoming.order_number_seq));
     const receipt: Row = { id, source_profile_id: incoming.profile_id, local_count: local.created_count, backup_count: incoming.created_count, retained_count: count, number_seq: seq, restored_at: now };
     const merged = new Map([...imported.restore_receipts, ...current.restore_receipts].map(r => [String(r.id), r])); merged.set(id, receipt);
-    const data: BackupData = { ...imported, app_state: [{ ...incoming, profile_id: local.profile_id, created_count: count, order_number_seq: seq }], backup_state: [{ id: 1, usage_receipt_id: id, media_generation: generation, last_created_at: current.backup_state[0].last_created_at }], restore_receipts: [...merged.values()] };
+    const quota = mergeQuotaEvidence(current.quota_state[0], current.quota_events, imported.quota_state[0], imported.quota_events, now);
+    const data: BackupData = { ...imported, ...quota, app_state: [{ ...incoming, profile_id: local.profile_id, created_count: count, order_number_seq: seq }], backup_state: [{ id: 1, usage_receipt_id: id, media_generation: generation, last_created_at: current.backup_state[0].last_created_at }], restore_receipts: [...merged.values()] };
     validateData(data);
     const triggers = (await objects(db)).filter(o => o.type === 'trigger');
     await db.exec('PRAGMA defer_foreign_keys=ON;');

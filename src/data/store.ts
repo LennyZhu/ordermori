@@ -2,7 +2,9 @@ import { isNoticeLocale } from '../domain/noticeCopy.ts';
 import { MIGRATIONS, SCHEMA_VERSION } from './migrations.ts';
 import { normalizeProduct } from '../domain/catalog.ts';
 import type { CatalogProduct, ProductInput } from '../domain/catalog.ts';
-import { DomainError, FREE_LIMIT, blankInput, countChars, editable, evaluate, transition } from '../domain/model.ts';
+import { DomainError, blankInput, countChars, editable, evaluate, transition } from '../domain/model.ts';
+import { freeOrderPermission } from '../domain/quota.ts';
+import { monthlyQuota } from './monthlyQuota.ts';
 import type { Action, Draft, Filter, History, HomeData, Order, OrderDetail, OrderInput, OrderItem, Shop } from '../domain/model.ts';
 import { isPaymentKind, normalizePayment, paymentStatus, snapshotOf } from '../domain/payment.ts';
 import type { PaymentAsset, PaymentChoice, PaymentInput, PaymentKind, PaymentMethod, PaymentSettings, PaymentSnapshot, QrState } from '../domain/payment.ts';
@@ -72,13 +74,16 @@ export class OrderStore {
     if (!state) throw new DomainError('data', '本機檔案設定不完整，未清除任何資料。');
     return state;
   }
-  async initialize() {
+  async initialize(options: { activateQuota?: boolean } = {}) {
     return this.enqueue(async () => {
       await this.db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');
-      const version = (await this.db.first<{ user_version: number }>('PRAGMA user_version'))?.user_version ?? 0;
-      if (version > SCHEMA_VERSION) throw new DomainError('version', '此資料由較新版本建立，請更新 App；不會重建或刪除資料。');
+      let version = 0;
       let applyingNoticeMigration = false;
       await this.atomic(async () => {
+        // Read after acquiring the write lock so another connection cannot
+        // finish a migration between our version check and migration loop.
+        version = (await this.db.first<{ user_version: number }>('PRAGMA user_version'))?.user_version ?? 0;
+        if (version > SCHEMA_VERSION) throw new DomainError('version', '此資料由較新版本建立，請更新 App；不會重建或刪除資料。');
         for (const migration of MIGRATIONS) if (migration.version > version) {
           applyingNoticeMigration = migration.version >= 3 && migration.version <= 5;
           if (migration.prepare) await migration.prepare(this.db);
@@ -91,6 +96,7 @@ export class OrderStore {
           await this.db.run('INSERT INTO shops(id,name,description,updated_at) VALUES(?,?,?,?)', [shopId, '', '', this.now()]);
           await this.db.run('INSERT INTO app_state(id,profile_id,active_shop_id) VALUES(1,?,?)', [this.newId(), shopId]);
         }
+        if (options.activateQuota !== false) await monthlyQuota(this.db, this.now());
       }).catch(async (cause: unknown) => {
         if (!applyingNoticeMigration) throw cause;
         const schema = await noticeSchemaDiagnostic(this.db).catch(() => undefined);
@@ -315,6 +321,7 @@ export class OrderStore {
   async getHome(search = '', filter: Filter = 'all'): Promise<HomeData> {
     return this.enqueue(async () => {
       const state = await this.state();
+      const quota = await this.atomic(() => monthlyQuota(this.db, this.now()));
       const clauses: Record<Filter, string> = {
         all: '1=1', unpaid: "order_status='active' AND payment_status='unpaid' AND fulfillment_status='pending'",
         fulfillment: "order_status='active' AND payment_status='paid' AND fulfillment_status='pending'",
@@ -327,10 +334,13 @@ export class OrderStore {
         COALESCE(SUM(CASE WHEN order_status='active' AND payment_status='unpaid' AND fulfillment_status='pending' THEN 1 ELSE 0 END),0) AS unpaid,
         COALESCE(SUM(CASE WHEN order_status='active' AND payment_status='paid' AND fulfillment_status='pending' THEN 1 ELSE 0 END),0) AS fulfillment
         FROM orders WHERE shop_id=?`, [state.active_shop_id]);
-      return { orders, unpaid: counts!.unpaid, fulfillment: counts!.fulfillment, createdCount: state.created_count,
+      return { orders, unpaid: counts!.unpaid, fulfillment: counts!.fulfillment, createdCount: state.created_count, quota,
         hasDraft: !!await this.db.first('SELECT id FROM drafts WHERE id=1 AND is_active=1 AND shop_id=?', [state.active_shop_id]),
         shop: (await this.db.first<Shop>('SELECT * FROM shops WHERE id=?', [state.active_shop_id]))! };
     });
+  }
+  async getQuota() {
+    return this.enqueue(() => this.atomic(() => monthlyQuota(this.db, this.now())));
   }
   // Read-only homepage projection; never opens, creates or updates a draft.
   async getDraftInput(): Promise<OrderInput | null> {
@@ -353,7 +363,6 @@ export class OrderStore {
         if (parsed.version !== 1 || !Array.isArray(parsed.input?.items)) throw new DomainError('draft', '草稿格式不支援，未覆寫原資料。');
         return { requestId: row.request_id, shopId: row.shop_id, editSeq: row.edit_seq, input: parsed.input };
       }
-      if (state.created_count >= FREE_LIMIT) throw new DomainError('quota', 'Free 累計 10 張訂單已用完。Pro 購買尚未開放，已有訂單仍可管理。');
       const draft = { requestId: this.newId(), shopId: state.active_shop_id, editSeq: 0, input: blankInput(this.newId()) };
       const defaultRow = await this.db.first<PaymentRow>('SELECT m.* FROM payment_methods m JOIN shop_payment_defaults d ON d.method_id=m.id AND d.shop_id=m.shop_id WHERE m.shop_id=?', [state.active_shop_id]);
       const defaultChoice = defaultRow ? await this.paymentChoice(this.paymentFromRow(defaultRow)) : null;
@@ -390,11 +399,15 @@ export class OrderStore {
         if (existing) return existing.id;
         const active = await this.db.first<DraftRow>('SELECT * FROM drafts WHERE id=1 AND is_active=1 AND request_id=? AND shop_id=?', [requestId, state.active_shop_id]);
         if (!active) throw new DomainError('draft', '草稿已轉換或關閉，請返回訂單列表。');
+        if (await this.db.first('SELECT request_id FROM quota_events WHERE request_id=?', [requestId])) throw new DomainError('request_created', '這份草稿已曾建立正式訂單；還原不會重發建立次數，請另開新草稿。');
         const values = evaluate(input);
-        if (state.created_count >= FREE_LIMIT) throw new DomainError('quota', 'Free 累計 10 張訂單已用完；未建立或扣除任何新訂單。');
+        const now = this.now();
+        const quota = await monthlyQuota(this.db, now);
+        const permission = freeOrderPermission(quota.used, quota.clockRollback);
+        if (!permission.allowed) throw new DomainError(quota.clockRollback ? 'quota_clock' : 'quota', permission.reason!);
         const ordinal = state.order_number_seq + 1;
         if (!Number.isSafeInteger(ordinal)) throw new DomainError('number', '訂單編號已超出安全範圍。');
-        const orderId = this.newId(); const now = this.now();
+        const orderId = this.newId();
         const shop = (await this.db.first<Shop>('SELECT * FROM shops WHERE id=?', [state.active_shop_id]))!;
         await this.db.run(`INSERT INTO orders(id,shop_id,order_number,creation_request_id,buyer_identifier,shop_name_snapshot,shop_description_snapshot,
           order_status,payment_status,fulfillment_status,shipping_method,subtotal_cents,discount_cents,shipping_cents,total_cents,note,created_at,updated_at)
@@ -404,6 +417,7 @@ export class OrderStore {
         await this.insertItems(orderId, shop.id, values);
         await this.saveOrderPayment(orderId, shop.id, input.payment);
         await this.db.run('INSERT INTO creation_ledger(event_id,order_id,allocated_number,created_at) VALUES(?,?,?,?)', [this.newId(), orderId, ordinal, now]);
+        await this.db.run('INSERT INTO quota_events(request_id,order_id,period,recorded_at) VALUES(?,?,?,?)', [requestId, orderId, quota.period, now]);
         await this.db.run("INSERT INTO status_history(id,order_id,shop_id,axis,from_value,to_value,reason,recorded_at) VALUES(?,?,?,'order','draft','active','明確儲存建立訂單',?)", [this.newId(), orderId, shop.id, now]);
         await this.db.run('UPDATE app_state SET created_count=created_count+1,order_number_seq=? WHERE id=1', [ordinal]);
         await this.db.run('UPDATE drafts SET is_active=0 WHERE id=1 AND request_id=?', [requestId]);

@@ -104,7 +104,7 @@ test('v6 -> current on fresh and original historical trigger variants is forward
       const old=db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE sql IS NOT NULL AND NOT (type='table' AND name IN ('notice_files','notice_preferences')) ORDER BY name").all();
       assert.equal(await checkSchema(p,reference),6);await p.exec('PRAGMA query_only=OFF');const store=new OrderStore(p,randomUUID);await store.initialize();await store.initialize();
       assert.equal(db.prepare('PRAGMA user_version').get().user_version,SCHEMA_VERSION);assert.deepEqual(await store.listProducts(),[]);
-      assert.deepEqual(db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'catalog_products%' AND NOT (type='table' AND name IN ('notice_files','notice_preferences')) ORDER BY name").all(),old);
+      assert.deepEqual(db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'catalog_products%' AND name NOT LIKE 'quota_%' AND NOT (type='table' AND name IN ('notice_files','notice_preferences')) ORDER BY name").all(),old);
       assert.equal(await checkSchema(p,reference),SCHEMA_VERSION);
     }finally{db.close();}
   }
@@ -164,9 +164,9 @@ test('new backup summary and catalog schema/data are validated; no arbitrary col
 
 test('library remains manageable when Free quota is exhausted; manual entry still creates independent orders',async()=>{
   const f=await fixture();try{
-    for(let i=0;i<10;i++){const d=await f.store.openDraft();await f.store.createOrder(d.requestId,{...d.input,buyer:'合成',items:[{id:randomUUID(),name:'手動商品',price:'1.00',quantity:'1'}]});}
+    for(let i=0;i<15;i++){const d=await f.store.openDraft();await f.store.createOrder(d.requestId,{...d.input,buyer:'合成',items:[{id:randomUUID(),name:'手動商品',price:'1.00',quantity:'1'}]});}
     const before=protectedRows(f.db),id=await f.store.saveProduct({name:'額度已滿仍可維護',price:'2.00'});await f.store.saveProduct({name:'已修改',price:'3.00'},{id,revision:1});await f.store.deleteProduct(id,2);assert.deepEqual(protectedRows(f.db),before);
-    assert.equal((await f.store.getHome()).createdCount,10);assert.equal((await f.store.getHome()).orders.length,10);
+    assert.equal((await f.store.getHome()).createdCount,15);assert.equal((await f.store.getHome()).orders.length,15);assert.equal((await f.store.getQuota()).canCreate,false);
   }finally{f.close();}
 });
 

@@ -142,23 +142,24 @@ test('first creation, snapshots, idempotent retry and no late draft resurrection
   } finally { db.close(); }
 });
 
-test('the final free slot is atomic, repeated submit returns original, eleventh rejected', async () => {
+test('the final free slot is atomic, repeated submit returns original, sixteenth rejected', async () => {
   const { store, db } = await setup();
   try {
-    for (let i = 0; i < 9; i++) await create(store);
+    for (let i = 0; i < 14; i++) await create(store);
     const draft = await store.openDraft();
     const values = await Promise.all([store.createOrder(draft.requestId, fixture()), store.createOrder(draft.requestId, fixture())]);
     assert.equal(values[0], values[1]);
-    assert.equal((await store.getHome()).createdCount, 10);
-    await assert.rejects(store.openDraft(), (error) => error.code === 'quota');
+    assert.equal((await store.getHome()).createdCount, 15);
+    const next = await store.openDraft();
+    await assert.rejects(store.createOrder(next.requestId, fixture()), error => error.code === 'quota');
     await assert.rejects(store.createOrder('unknown-request', fixture()));
-    assert.equal(db.prepare('SELECT count(*) AS n FROM orders').get().n, 10);
-    assert.equal(db.prepare('SELECT count(*) AS n FROM order_items').get().n, 20);
-    assert.equal(db.prepare('SELECT count(*) AS n FROM creation_ledger').get().n, 10);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM orders').get().n, 15);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM order_items').get().n, 30);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM creation_ledger').get().n, 15);
     assert.throws(() => db.exec('UPDATE app_state SET created_count=0'));
     const order = (await store.getOrder(values[0])).order;
     await store.changeStatus(order.id, order.revision, 'cancel', '測試取消');
-    assert.equal((await store.getHome()).createdCount, 10);
+    assert.equal((await store.getHome()).createdCount, 15);
     assert.equal(await store.createOrder(draft.requestId, fixture()), order.id);
   } finally { db.close(); }
 });

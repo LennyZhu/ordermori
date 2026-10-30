@@ -20,7 +20,7 @@ let connection: SQLiteDatabase | undefined;
 let pending: Promise<OrderStore> | undefined;
 export function openStore(): Promise<OrderStore> {
   pending ??= (async () => {
-    const database = await openDatabaseAsync('ordermori.db');
+    const database = await openDatabaseAsync('ordermori.db', { useNewConnection: true });
     const store = new OrderStore(databasePort(database), randomUUID, undefined, verifyPaymentAsset);
     try {
       await store.initialize();

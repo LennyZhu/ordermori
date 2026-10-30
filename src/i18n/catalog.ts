@@ -41,16 +41,6 @@ export const catalog = [
     "en": "Payment settings"
   },
   {
-    "id": "m0009",
-    "zh": "Free 累計額度已用完",
-    "en": "Free lifetime limit reached"
-  },
-  {
-    "id": "m0010",
-    "zh": "前 10 張真實訂單已建立。Pro 購買尚未開放；已有訂單仍可查看及管理，不會刪除。",
-    "en": "Your first 10 orders have been created. Pro purchases are not available yet. You can still view and manage existing orders; they will not be deleted."
-  },
-  {
     "id": "m0011",
     "zh": "繼續未完成的訂單？",
     "en": "Continue your draft?"
@@ -129,11 +119,6 @@ export const catalog = [
     "id": "m0026",
     "zh": "最近訂單",
     "en": "Recent orders"
-  },
-  {
-    "id": "m0027",
-    "zh": "Free 累計 %{v0} / %{v1}",
-    "en": "Free lifetime usage %{v0} / %{v1}"
   },
   {
     "id": "m0028",
@@ -264,11 +249,6 @@ export const catalog = [
     "id": "m0053",
     "zh": "%{v0} / %{v1} 張",
     "en": "%{v0} / %{v1} orders"
-  },
-  {
-    "id": "m0054",
-    "zh": "累計前 %{v0} 張真實訂單免費，取消及退款不退還額度。",
-    "en": "Your first %{v0} orders are free for the lifetime of this local profile. Cancellations and refunds do not return allowance."
   },
   {
     "id": "m0055",
@@ -1876,19 +1856,9 @@ export const catalog = [
     "en": "Draft shop ownership is inconsistent."
   },
   {
-    "id": "m0376",
-    "zh": "Free 累計 10 張訂單已用完。Pro 購買尚未開放，已有訂單仍可管理。",
-    "en": "The Free lifetime limit of 10 orders is used up. Pro purchases are not available yet. Existing orders can still be managed."
-  },
-  {
     "id": "m0377",
     "zh": "草稿已轉換或關閉，請返回訂單列表。",
     "en": "This draft was converted or closed. Return to the order list."
-  },
-  {
-    "id": "m0378",
-    "zh": "Free 累計 10 張訂單已用完；未建立或扣除任何新訂單。",
-    "en": "The Free lifetime limit of 10 orders is used up. No new order was created or counted."
   },
   {
     "id": "m0379",
@@ -3464,5 +3434,105 @@ export const catalog = [
   "id": "b4_notice_backup_language",
   "zh": "備份付款通知語言無效。",
   "en": "Invalid payment notice language in backup."
+},
+{
+  "id": "p4c_used",
+  "zh": "本月已建立 %{v0} / %{v1} 張訂單",
+  "en": "%{v0} of %{v1} orders used this month"
+},
+{
+  "id": "p4c_allowance",
+  "zh": "每月可免費建立 15 張正式訂單，取消、刪除及退款不退還當月額度。",
+  "en": "Create up to 15 orders each month for free. Cancellations, deletions and refunds do not return used allowance."
+},
+{
+  "id": "p4c_reset",
+  "zh": "每月 1 日重新計算，未用額度不累積。草稿及歷史訂單仍可使用。",
+  "en": "Allowance resets on the first day of each month in Hong Kong time. Unused allowance does not carry over. Drafts and existing orders remain available."
+},
+{
+  "id": "p4c_empty",
+  "zh": "本月免費額度已用完",
+  "en": "Monthly free allowance used up"
+},
+{
+  "id": "p4c_draft",
+  "zh": "編輯草稿",
+  "en": "Edit draft"
+},
+{
+  "id": "p4c_clock_title",
+  "zh": "請檢查裝置時間",
+  "en": "Check device time"
+},
+{
+  "id": "p4c_limit",
+  "zh": "本月 15 張免費訂單已用完。下月將重新獲得 15 張額度；歷史訂單及草稿仍可使用。Pro 購買將於後續版本提供。",
+  "en": "All 15 free orders for this month have been used. You will get 15 more next month. Existing orders and drafts remain available. Pro purchases will be available in a future version."
+},
+{
+  "id": "p4c_clock",
+  "zh": "裝置時間早於已記錄月份，請校正時間後建立訂單；歷史訂單及草稿仍可使用。",
+  "en": "Device time is earlier than a previously recorded month. Correct the clock before creating an order. Existing orders and drafts remain available."
+},
+{
+  "id": "p4c_clock_invalid",
+  "zh": "裝置時間無效，請校正時間後重試。",
+  "en": "Device time is invalid. Correct the clock and try again."
+},
+{
+  "id": "p4c_data",
+  "zh": "月度額度記錄無效，未重設任何用量。",
+  "en": "Monthly allowance records are invalid. No usage has been reset."
+},
+{
+  "id": "p4c_restore",
+  "zh": "還原完成。店舖、訂單及圖片已重新載入；已記錄的月度用量不會回退。",
+  "en": "Restore complete. Your shop, orders and images have been reloaded. Recorded monthly usage has not been reduced."
+},
+{
+  "id": "p4c_restore_confirm",
+  "zh": "還原將取代此裝置現有的店舖及訂單資料，建議先建立備份。常用商品庫亦會取代；舊備份沒有商品時還原為空庫。不合併訂單、不恢復 Pro，保留本機與備份已知的月度建立記錄，用量不回退。",
+  "en": "Restoring replaces this device’s shop, orders and product catalog. Back up first. Older backups without products restore an empty catalog. Orders are not merged and Pro is not restored. Known monthly creation records are retained from both sources so usage cannot decrease."
+},
+{
+  "id": "p4c_restore_detail",
+  "zh": "常用商品庫會一併取代；舊備份沒有商品時還原為空庫。保留各月已知建立記錄及最高月份，不因還原重發額度。備份不授予 Pro；卸載或完全抹除後無法保證保留用量。",
+  "en": "The catalog is replaced too; old backups without products restore an empty catalog. Known monthly creation records and the latest recorded month are retained. Restoring does not grant new allowance or Pro. Usage may not survive uninstalling or fully erasing the device."
+},
+{
+  "id": "p4c_summary_period",
+  "zh": "已記錄額度月份",
+  "en": "Recorded allowance month"
+},
+{
+  "id": "p4c_summary_used",
+  "zh": "該月已建立訂單",
+  "en": "Orders used that month"
+},
+{
+  "id": "p4c_backup_invalid",
+  "zh": "備份月度額度記錄無效。",
+  "en": "Invalid monthly allowance records in backup."
+},
+{
+  "id": "p4c_backup_events",
+  "zh": "備份月度建立記錄無法校驗。",
+  "en": "Monthly creation records in the backup could not be verified."
+},
+{
+  "id": "p4c_backup_conflict",
+  "zh": "本機與備份月度建立記錄衝突，未取代資料。",
+  "en": "Local and backup monthly creation records conflict. No data was replaced."
+},
+{
+  "id": "p4c_summary_invalid",
+  "zh": "備份月度額度摘要與資料庫不符。",
+  "en": "The backup monthly allowance summary does not match its database."
+},
+{
+  "id": "p4c_old_draft",
+  "zh": "這份草稿已曾建立正式訂單；還原不會重發建立次數，請另開新草稿。",
+  "en": "This draft was already used to create an order. Restoring does not grant another creation. Start a new draft."
 }
 ] as const;

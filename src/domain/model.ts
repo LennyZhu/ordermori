@@ -1,6 +1,6 @@
 import type { PaymentSnapshot } from './payment.ts';
 
-export const FREE_LIMIT = 10;
+export const FREE_LIMIT = 15;
 export const SHIPPING = ['included', 'sf_collect', 'pickup', 'custom'] as const;
 export type Shipping = typeof SHIPPING[number];
 export type OrderStatus = 'active' | 'cancelled';
@@ -37,6 +37,7 @@ export interface History {
 export interface OrderDetail { order: Order; items: OrderItem[]; history: History[]; payment: PaymentSnapshot | null }
 export interface HomeData {
   orders: Order[]; unpaid: number; fulfillment: number; createdCount: number; hasDraft: boolean; shop: Shop;
+  quota: import('./quota.ts').MonthlyQuota;
 }
 export class DomainError extends Error {
   code: string;

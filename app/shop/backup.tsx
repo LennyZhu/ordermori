@@ -8,7 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useApp } from '../../src/AppProvider';
 import { backupLastCreated, chooseBackup, createBackup, exportBackup, releaseBackup } from '../../src/data/backupNative';
 import type { BackupPreview } from '../../src/data/backupNative';
-import { errorMessage } from '../../src/domain/model';
+import { errorMessage, FREE_LIMIT } from '../../src/domain/model';
 import { ActionButton, AmountRow, SectionHeading, e } from '../../src/ui/editorial';
 import { ErrorNotice, color, s } from '../../src/ui/common';
 
@@ -41,7 +41,7 @@ export default function BackupScreen() {
   }
   function restore() {
     if (!selected || lock.current) return;
-    Alert.alert(tr("取代此裝置的資料？"),tr("還原將取代此裝置現有的店舖及訂單資料。建議先建立目前資料的備份。常用商品庫亦會被取代；舊備份沒有常用商品時，商品庫將為空。還原不合併訂單，不恢復 Pro 購買權益，累計用量取有效記錄的較高值。"),[
+    Alert.alert(tr("取代此裝置的資料？"),tr("還原將取代此裝置現有的店舖及訂單資料，建議先建立備份。常用商品庫亦會取代；舊備份沒有商品時還原為空庫。不合併訂單、不恢復 Pro，保留本機與備份已知的月度建立記錄，用量不回退。"),[
       {text:tr("取消"),style:'cancel'}, {text:tr("確認還原並取代"),style:'destructive',onPress:() => {
         if (lock.current || !selectedRef.current) return;
         const preview=selectedRef.current; selectedRef.current=null; // Provider owns the restore lease while pages unmount.
@@ -69,7 +69,7 @@ export default function BackupScreen() {
       <Text style={e.caption}>{tr`在系統面板選擇「儲存到檔案」，可選 Files、iCloud Drive 或你提供的其他位置。關閉／取消面板不代表已儲存。`}</Text></View>}
     {selected && <View style={{gap:12}}><View style={e.divider}/><SectionHeading title={tr("還原前確認")}/><Summary preview={selected}/>
       <Text style={e.body}>{tr`還原將取代此裝置現有的店舖及訂單資料。`}</Text>
-      <Text style={e.caption}>{tr`常用商品庫會一併取代；舊備份沒有商品時還原為空庫。累計建立用量不回退。此備份不授予 Pro；本機資料無法防止卸載或完全抹除後重設累計用量。`}</Text>
+      <Text style={e.caption}>{tr`常用商品庫會一併取代；舊備份沒有商品時還原為空庫。保留各月已知建立記錄及最高月份，不因還原重發額度。備份不授予 Pro；卸載或完全抹除後無法保證保留用量。`}</Text>
       <ActionButton title={tr("檢查並確認還原")} danger secondary disabled={!!busy} onPress={restore}/>
       <ActionButton title={tr("取消還原")} secondary disabled={!!busy} onPress={() => { void releaseBackup(selectedRef.current).catch(() => undefined); selectedRef.current=null; setSelected(null); setMessage('已取消還原，現有資料未變更。'); }}/></View>}
     <View style={e.divider}/><Text style={e.caption}>{tr`替換還原，不合併訂單。支援本 App 的 .ordermori.zip 及舊版 .ordermori 備份；目前上限 256 MB、512 個檔案。請保持 App 開啟直到完成。`}</Text>
@@ -79,5 +79,7 @@ function Summary({preview}:{preview:BackupPreview}) {
   useLanguage();
   return <View style={[e.surface,e.inset]}><AmountRow label={tr("備份日期")} value={date(preview.createdAt)}/><View style={e.divider}/>
     <AmountRow label={tr("訂單 / 商品項目")} value={`${preview.summary.orders} / ${preview.summary.items}`}/><AmountRow label={tr("常用商品")} value={tr`${preview.summary.products ?? 0} 件`}/><AmountRow label={tr("實際圖片檔案")} value={tr`${preview.summary.media} 個`}/>
-    <AmountRow label={tr("累計已建立訂單")} value={tr`${preview.summary.createdCount} 張`}/><AmountRow label={tr("備份包大小")} value={`${(preview.bytes/1024/1024).toFixed(1)} MB`}/></View>;
+    <AmountRow label={tr("累計已建立訂單")} value={tr`${preview.summary.createdCount} 張`}/>
+    {preview.summary.quotaPeriod && <><AmountRow label={tr('已記錄額度月份')} value={preview.summary.quotaPeriod}/><AmountRow label={tr('該月已建立訂單')} value={`${preview.summary.quotaUsed} / ${FREE_LIMIT}`}/></>}
+    <AmountRow label={tr("備份包大小")} value={`${(preview.bytes/1024/1024).toFixed(1)} MB`}/></View>;
 }

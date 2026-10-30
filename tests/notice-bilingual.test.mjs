@@ -18,6 +18,7 @@ import { pngCrc } from '../src/domain/noticePixels.ts';
 import { toInput, FREE_LIMIT } from '../src/domain/model.ts';
 import { emptyPayment, snapshotOf } from '../src/domain/payment.ts';
 import { language } from '../src/i18n/index.ts';
+import { SCHEMA_VERSION } from '../src/data/migrations.ts';
 import { OrderStore } from '../src/data/store.ts';
 import { readBackupData, checkSchema, migrateInspected, validateData, replaceData, mediaReferences } from '../src/backup/data.ts';
 import { writeArchive, inspectArchive, copyEntry } from '../src/backup/archive.ts';
@@ -40,7 +41,7 @@ test('two existing templates × two explicit locales translate every fixed label
       if(locale==='en'){for(const [key,text] of Object.entries(b))if(!['shop','description','buyer','shipping','bank','payee','account','note'].includes(key)&&!key.endsWith('-name'))assert.doesNotMatch(text,/\p{Script=Han}/u,key);assert.match(b.legal,/Not a receipt or confirmation of payment/);assert.match(b.number,/^Order no\. OM-/);assert.equal(b.quantityLabel,'Qty');}
       assert.deepEqual(await f.store.getOrder(id),before);assert.equal((await f.store.getHome()).createdCount,1);
     }
-    assert.equal(FREE_LIMIT,10);assert.deepEqual(Object.keys(noticeCopy.en).sort(),Object.keys(noticeCopy['zh-HK']).sort());
+    assert.equal(FREE_LIMIT,15);assert.deepEqual(Object.keys(noticeCopy.en).sort(),Object.keys(noticeCopy['zh-HK']).sort());
   }finally{f.db.close();}
 });
 
@@ -51,10 +52,11 @@ test('v6/v7 fresh and historical schemas upgrade forward, preserve old source ha
     f.db.prepare('INSERT INTO notice_files VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').run(old.id,id,old.shopId,old.orderRevision,0,old.template,old.relativePath,1080,16,old.bytes,old.sha256,old.dataHash,DATE);
     const before=rawRows(f.db),triggers=f.db.prepare("SELECT name,sql FROM sqlite_master WHERE type='trigger' ORDER BY name").all();
     assert.equal(await checkSchema(f.adapter,reference),version);f.db.exec('PRAGMA query_only=OFF');await f.store.initialize();await f.store.initialize();
-    assert.equal(f.db.prepare('PRAGMA user_version').get().user_version,8);assert.deepEqual(f.db.prepare("SELECT name,sql FROM sqlite_master WHERE type='trigger' ORDER BY name").all(),triggers);
+    assert.equal(f.db.prepare('PRAGMA user_version').get().user_version,SCHEMA_VERSION);assert.deepEqual(f.db.prepare("SELECT name,sql FROM sqlite_master WHERE type='trigger' AND name NOT LIKE 'quota_%' ORDER BY name").all(),triggers);
+    assert.equal(f.db.prepare("SELECT count(*) n FROM sqlite_master WHERE type='trigger' AND name LIKE 'quota_%'").get().n,4);
     const after=rawRows(f.db);after.notice_files=after.notice_files.map(({locale,...r})=>{assert.equal(locale,'zh-HK');return r;});assert.deepEqual(after,before);
     const context=await f.store.getNoticeContext(id);assert.equal(context.preferences.locale,'zh-HK');assert.equal(hash(noticeSourceKey(buildNotice(context))),golden.sha256);
-    assert.equal(noticeFileLocale((await f.store.listNoticeFiles(id))[0]),'zh-HK');assert.equal(await checkSchema(f.adapter,reference),8);
+    assert.equal(noticeFileLocale((await f.store.listNoticeFiles(id))[0]),'zh-HK');assert.equal(await checkSchema(f.adapter,reference),SCHEMA_VERSION);
     assert.equal(firstNoticeLocale(context,await f.store.listNoticeFiles(id),'en'),'zh-HK');
   }finally{f.db.close();}}
 });
@@ -63,7 +65,7 @@ test('v8 migration failure is atomic and retryable; no historical PNG row or dat
   const f=await fixture(7,true);try{await order(f);const before=rawRows(f.db),broken={...f.adapter,exec:async sql=>{await f.adapter.exec(sql);if(sql.includes('ALTER TABLE notice_files ADD COLUMN locale'))throw Error('synthetic v8 failure');}};
     await assert.rejects(new OrderStore(broken,randomUUID).initialize());assert.equal(f.db.prepare('PRAGMA user_version').get().user_version,7);assert.deepEqual(rawRows(f.db),before);
     for(const [t,column]of [['notice_preferences','output_locale'],['notice_files','locale']])assert.ok(!f.db.prepare(`PRAGMA table_info(${t})`).all().some(c=>c.name===column));
-    await f.store.initialize();assert.equal(f.db.prepare('PRAGMA user_version').get().user_version,8);
+    await f.store.initialize();assert.equal(f.db.prepare('PRAGMA user_version').get().user_version,SCHEMA_VERSION);
   }finally{f.db.close();}
 });
 
@@ -126,7 +128,8 @@ test('20 items, 120-character mixed names, long consented note and large cents r
 const byteSource=b=>({size:b.length,read:async(at,n)=>new Uint8Array(b.subarray(at,at+n))});
 async function packageBackup(f,path,media,version){
   const snapshot=path+'.snapshot';execFileSync('/usr/bin/python3',['-c','import sqlite3,sys\ns=sqlite3.connect(sys.argv[1]);d=sqlite3.connect(sys.argv[2]);s.backup(d);d.close();s.close()',path,snapshot]);
-  const home=await f.store.getHome(),summary={orders:1,items:1,media:Object.keys(media).length,createdCount:1,profileId:'synthetic-profile',schemaVersion:version,...(version>=7?{products:(await f.store.listProducts()).length}:{})};assert.equal(home.createdCount,1);
+  const home=f.db.prepare('SELECT created_count AS createdCount FROM app_state').get(),summary={orders:1,items:1,media:Object.keys(media).length,createdCount:1,profileId:'synthetic-profile',schemaVersion:version,...(version>=7?{products:(await f.store.listProducts()).length}:{})};assert.equal(home.createdCount,1);
+  if(version>=9){const q=await f.store.getQuota();summary.quotaPeriod=q.period;summary.quotaUsed=q.used;}
   const files=[['data.sqlite',readFileSync(snapshot)],...Object.entries(media).map(([p,b])=>['media/'+p,b])];
   const manifest={format:'OrderMori',version:1,createdAt:DATE,schemaVersion:version,summary,files:files.map(([path,b])=>({path,size:b.length,sha256:hash(b)}))},chunks=[];
   await writeArchive([['manifest.json',Buffer.from(JSON.stringify(manifest))],...files].map(([path,b])=>({path,source:byteSource(b)})),{write:async b=>{chunks.push(Buffer.from(b));}});
@@ -134,20 +137,20 @@ async function packageBackup(f,path,media,version){
   const parsed=parseManifest(contents['manifest.json'].toString(),entries);for(const item of parsed.files)assert.equal(hash(contents[item.path]),item.sha256);return {parsed,contents};
 }
 
-test('actual v6/v7/v8 ZIP backups migrate only on staging; restore bilingual file languages/media, historical hashes and quota safely',async()=>{
-  for(const version of [6,7,8]){const dir=mkdtempSync(join(tmpdir(),'ordermori-bilingual-backup-')),path=join(dir,'live.sqlite'),f=await fixture(version,true,path),target=await fixture();try{
+test('actual v6/v7/v8/v9 ZIP backups migrate only on staging; restore bilingual file languages/media, historical hashes and quota safely',async()=>{
+  for(const version of [6,7,8,9]){const dir=mkdtempSync(join(tmpdir(),'ordermori-bilingual-backup-')),path=join(dir,'live.sqlite'),f=await fixture(version,true,path),target=await fixture();try{
     const id=await order(f),zh=buildNotice(await f.store.getNoticeContext(id)),bytes=png(),old=record(zh,bytes),media={[old.relativePath]:bytes};
     if(version>=7)await f.store.saveProduct({name:'舊備份常用商品',price:'88.00'});
     if(version<8)f.db.prepare('INSERT INTO notice_files VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').run(old.id,id,old.shopId,old.orderRevision,old.preferencesRevision,old.template,old.relativePath,old.width,old.height,old.bytes,old.sha256,old.dataHash,DATE);
     else {await f.store.recordNoticeFile(old,noticeSourceKey(zh));const en=await select(f,id,'soft','en'),current=record(en,bytes);await f.store.recordNoticeFile(current,noticeSourceKey(en));media[current.relativePath]=bytes;}
     const before=rawRows(f.db),{parsed,contents}=await packageBackup(f,path,media,version),stagePath=join(dir,'staging.sqlite');writeFileSync(stagePath,contents['data.sqlite']);const stage=new DatabaseSync(stagePath);
-    try{assert.equal(await checkSchema(port(stage),reference),version);await migrateInspected(port(stage));const data=await readBackupData(port(stage));verifySummary(parsed,validateData(data));assert.equal(data.notice_files.length,version===8?2:1);assert.equal(data.notice_files.find(r=>r.id===old.id).data_hash,old.dataHash);assert.equal(data.notice_files.find(r=>r.id===old.id).locale,'zh-HK');
+    try{assert.equal(await checkSchema(port(stage),reference),version);await migrateInspected(port(stage));const data=await readBackupData(port(stage));verifySummary(parsed,validateData(data));assert.equal(data.notice_files.length,version>=8?2:1);assert.equal(data.notice_files.find(r=>r.id===old.id).data_hash,old.dataHash);assert.equal(data.notice_files.find(r=>r.id===old.id).locale,'zh-HK');
       const refs=mediaReferences(data),generation=randomUUID(),mediaDir=join(dir,generation);for(const r of refs){const p=join(mediaDir,r.path);mkdirSync(dirname(p),{recursive:true});writeFileSync(p,contents['media/'+r.path]);}
       await verifyBackupMedia(refs,{size:async p=>readFileSync(join(mediaDir,p)).length,hash:async p=>hash(readFileSync(join(mediaDir,p))),header:async p=>readFileSync(join(mediaDir,p)).subarray(0,24),dimensions:async p=>readNoticePngHeader(readFileSync(join(mediaDir,p)).subarray(0,24))});
       await order(target);await order(target);const live=await readBackupData(target.adapter);await assert.rejects(target.store.maintenance(db=>replaceData(db,data,generation,randomUUID(),DATE,async()=>{throw Error('synthetic restore failure');})));assert.deepEqual(await readBackupData(target.adapter),live);
-      await target.store.maintenance(db=>replaceData(db,data,generation,randomUUID(),DATE));assert.equal((await target.store.getHome()).createdCount,2);assert.equal((await target.store.getNoticeContext(id)).preferences.locale,version===8?'en':'zh-HK');
+      await target.store.maintenance(db=>replaceData(db,data,generation,randomUUID(),DATE));assert.equal((await target.store.getHome()).createdCount,2);assert.equal((await target.store.getNoticeContext(id)).preferences.locale,version>=8?'en':'zh-HK');
       assert.equal((await target.store.listProducts()).length,version>=7?1:0);
-      const restored=await target.store.listNoticeFiles(id);assert.equal(restored.length,version===8?2:1);assert.equal(restored.find(r=>r.id===old.id).dataHash,old.dataHash);for(const r of restored)assert.equal(hash(readFileSync(join(mediaDir,r.relativePath))),r.sha256);
+      const restored=await target.store.listNoticeFiles(id);assert.equal(restored.length,version>=8?2:1);assert.equal(restored.find(r=>r.id===old.id).dataHash,old.dataHash);for(const r of restored)assert.equal(hash(readFileSync(join(mediaDir,r.relativePath))),r.sha256);
       if(version<8)assert.equal(hash(noticeSourceKey(buildNotice(await target.store.getNoticeContext(id)))),golden.sha256);
       assert.deepEqual(rawRows(f.db),before);assert.equal(f.db.prepare('PRAGMA user_version').get().user_version,version);
     }finally{stage.close();}

@@ -7,6 +7,7 @@ import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useApp } from '../../src/AppProvider';
 import { FREE_LIMIT, errorMessage, money } from '../../src/domain/model';
+import { QUOTA_CLOCK_ERROR, QUOTA_EXHAUSTED } from '../../src/domain/quota';
 import type { Filter, HomeData } from '../../src/domain/model';
 import { ErrorNotice, color, dateText, s, statusText } from '../../src/ui/common';
 import { ActionButton, CompactField, OrderStates, SectionHeading, TextAction, e } from '../../src/ui/editorial';
@@ -38,8 +39,10 @@ export default function OrdersScreen() {
   }, [store, version, search, filter, retry]);
   const create = () => {
     if (!data) return;
-    if (data.createdCount >= FREE_LIMIT) {
-      Alert.alert(tr("Free 累計額度已用完"), tr("前 10 張真實訂單已建立。Pro 購買尚未開放；已有訂單仍可查看及管理，不會刪除。")); return;
+    if (!data.quota.canCreate) {
+      Alert.alert(tr(data.quota.clockRollback ? '請檢查裝置時間' : '本月免費額度已用完'), trMessage(data.quota.clockRollback ? QUOTA_CLOCK_ERROR : QUOTA_EXHAUSTED), [
+        { text: tr('取消'), style: 'cancel' }, { text: tr('編輯草稿'), onPress: () => router.push('/order/new') },
+      ]); return;
     }
     if (resumeDraft) {
       Alert.alert(tr("繼續未完成的訂單？"), tr("目前只保留一份草稿。可繼續填寫，或在草稿頁明確捨棄後重新開單。"), [
@@ -87,8 +90,8 @@ export default function OrdersScreen() {
         </Pressable>}
         {!!error && <ErrorNotice message={trMessage(error) + (data ? tr(" 以下可能為上次讀取的資料。") : '')} retry={() => setRetry((v) => v + 1)} />}
         <View style={{ gap: 6 }}><SectionHeading title={search ? tr("搜尋結果") : filter === 'all' ? tr("最近訂單") : t(filter)}
-          right={data ? <Text style={h.quota}>{tr`Free 累計 ${data.createdCount} / ${FREE_LIMIT}`}</Text> : undefined} />
-          {data && data.createdCount >= FREE_LIMIT && <Text style={e.caption}>{tr`新增額度已用完，已有訂單仍可管理。`}</Text>}
+          right={data ? <Text style={h.quota}>{tr`本月已建立 ${data.quota.used} / ${FREE_LIMIT} 張訂單`}</Text> : undefined} />
+          {data && !data.quota.canCreate && <Text style={e.caption}>{trMessage(data.quota.clockRollback ? QUOTA_CLOCK_ERROR : QUOTA_EXHAUSTED)}</Text>}
         </View>
       </View>}
       renderItem={({ item, index }) => <Pressable accessibilityRole="button" accessibilityLabel={`${item.buyer_identifier}，${item.order_number}，${money(item.total_cents)}，${tr(statusText[item.order_status])}，${tr(statusText[item.payment_status])}，${tr(statusText[item.fulfillment_status])}`}

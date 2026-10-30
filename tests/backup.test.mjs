@@ -230,16 +230,17 @@ test('an over-limit valid archive restores all history but grants no Pro or addi
   const a=await fixture(0,false),b=await fixture(9,false);try{
     // Simulate valid history created by a future entitlement-enabled build;
     // there is deliberately no entitlement table or Pro flag in this archive.
-    for(const ordinal of [10,11]) {
+    for(const ordinal of [10,11,12,13,14,15,16]) {
     const order={...b.db.prepare('SELECT * FROM orders LIMIT 1').get(),id:randomUUID(),creation_request_id:randomUUID(),order_number:`OM-${String(ordinal).padStart(6,'0')}`};
     const item={...b.db.prepare('SELECT * FROM order_items LIMIT 1').get(),id:randomUUID(),order_id:order.id};
     for(const [table,row] of [['orders',order],['order_items',item]]){const keys=Object.keys(row);b.db.prepare(`INSERT INTO ${table}(${keys.join(',')}) VALUES(${keys.map(()=>'?').join(',')})`).run(...keys.map(k=>row[k]));}
+    b.db.prepare('INSERT INTO quota_events(request_id,order_id,period,recorded_at) VALUES(?,?,?,?)').run(order.creation_request_id,order.id,'2026-10',now);
     b.db.prepare('INSERT INTO creation_ledger(event_id,order_id,allocated_number,created_at) VALUES(?,?,?,?)').run(randomUUID(),order.id,ordinal,now);
     }
-    b.db.exec('UPDATE app_state SET created_count=11,order_number_seq=11');
+    b.db.exec('UPDATE app_state SET created_count=16,order_number_seq=16');
     const data=await readBackupData(b.adapter);await a.store.maintenance(db=>replaceData(db,data,randomUUID(),randomUUID(),now));
-    const restored=await readBackupData(a.adapter);assert.equal(restored.orders.length,11);assert.equal(restored.app_state[0].created_count,11);
+    const restored=await readBackupData(a.adapter);assert.equal(restored.orders.length,16);assert.equal(restored.app_state[0].created_count,16);
     const draft=await a.store.openDraft();await assert.rejects(a.store.createOrder(draft.requestId,{...draft.input,buyer:'synthetic',items:[{id:randomUUID(),name:'合成',price:'1.00',quantity:'1'}]}),e=>e.code==='quota');
-    assert.equal((await readBackupData(a.adapter)).orders.length,11);
+    assert.equal((await readBackupData(a.adapter)).orders.length,16);
   }finally{a.cleanup();b.cleanup();}
 });

@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useApp } from '../../src/AppProvider';
 import { FREE_LIMIT, errorMessage } from '../../src/domain/model';
+import { QUOTA_CLOCK_ERROR } from '../../src/domain/quota';
 import { ErrorNotice, Loading, color, s } from '../../src/ui/common';
 import { ActionButton, CompactField, SectionHeading, e } from '../../src/ui/editorial';
 
@@ -19,6 +20,7 @@ export default function ShopScreen() {
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(true);
   const [count, setCount] = useState<number | null>(null);
+  const [clockRollback, setClockRollback] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
@@ -40,7 +42,7 @@ export default function ShopScreen() {
   }, [store, retry]);
   useEffect(() => {
     let active = true;
-    store.getHome().then((data) => { if (active) setCount(data.createdCount); }).catch(() => { if (active) setCount(null); });
+    store.getQuota().then((quota) => { if (active) { setCount(quota.used); setClockRollback(quota.clockRollback); } }).catch(() => { if (active) setCount(null); });
     return () => { active = false; };
   }, [store, version]);
   async function save() {
@@ -88,9 +90,11 @@ export default function ShopScreen() {
           <Ionicons name="language-outline" size={21} color={color.ink}/><View style={{ flex:1, minWidth:0, gap:3 }}><Text style={e.fieldLabel}>{tr('語言 / Language')}</Text><Text style={e.caption}>{preference === 'system' ? tr('跟隨系統') : preference === 'en' ? 'English' : '繁體中文（香港）'}</Text></View><Ionicons name="chevron-forward" size={16} color={color.muted}/>
         </Pressable>
         <View style={[e.surface, e.inset]}>
-          <View style={[e.rowWrap, { justifyContent: 'space-between' }]}><Text style={e.sectionTitle}>Free</Text><Text style={e.numeric}>{tr`${count ?? '—'} / ${FREE_LIMIT} 張`}</Text></View>
-          <View style={e.divider} /><Text style={e.caption}>{tr`累計前 ${FREE_LIMIT} 張真實訂單免費，取消及退款不退還額度。`}</Text>
+          <View style={[e.rowWrap, { justifyContent: 'space-between' }]}><Text style={e.sectionTitle}>Free</Text><Text style={e.numeric}>{tr`本月已建立 ${count ?? '—'} / ${FREE_LIMIT} 張訂單`}</Text></View>
+          <View style={e.divider} /><Text style={e.caption}>{tr`每月可免費建立 15 張正式訂單，取消、刪除及退款不退還當月額度。`}</Text>
+          <Text style={e.caption}>{tr`每月 1 日重新計算，未用額度不累積。草稿及歷史訂單仍可使用。`}</Text>
           <Text style={e.caption}>{tr`Pro 購買尚未開放。`}</Text>
+          {clockRollback && <Text style={e.caption}>{trMessage(QUOTA_CLOCK_ERROR)}</Text>}
         </View>
         <View style={{ gap: 8 }}><View style={e.row}><Ionicons name="lock-closed-outline" size={15} color={color.muted} /><Text style={e.fieldLabel}>{tr`本機資料，無需登入`}</Text></View>
           <Text style={e.caption}>{tr`資料只儲存在此裝置，請自行保管備份；刪除 App 將移除本機資料。`}</Text></View>

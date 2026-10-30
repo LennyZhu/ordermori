@@ -77,7 +77,7 @@ test('real SQLite orders, draft inputs, prices, quota, payment snapshots and PNG
     const orderId=await store.createOrder(draft.requestId,input),next=await store.openDraft();await store.saveDraft(next.requestId,1,{...next.input,buyer:'未儲存 buyer',note:'keep 備註'});
     const before=await readBackupData(port(db)),notice=buildNotice(await store.getNoticeContext(orderId)),key=noticeSourceKey(notice);
     await language.initialize(storage('system'),['en-HK']);await language.select('en');await language.select('zh-HK');await language.select('system');
-    assert.deepEqual(await readBackupData(port(db)),before);assert.deepEqual(buildNotice(await store.getNoticeContext(orderId)),notice);assert.equal(noticeSourceKey(notice),key);assert.equal(notice.locale,'zh-HK');assert.equal((await store.getOrder(orderId)).order.total_cents,12800);assert.equal(FREE_LIMIT,10);
+    assert.deepEqual(await readBackupData(port(db)),before);assert.deepEqual(buildNotice(await store.getNoticeContext(orderId)),notice);assert.equal(noticeSourceKey(notice),key);assert.equal(notice.locale,'zh-HK');assert.equal((await store.getOrder(orderId)).order.total_cents,12800);assert.equal(FREE_LIMIT,15);
   }finally{db.close();}
 });
 test('native language config merges signing, preserves media ABI fix and declares localized permission strings',()=>{
