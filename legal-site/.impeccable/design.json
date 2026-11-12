@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-30T10:42:02Z",
+  "title": "Design System: OrderMori Legal & Support",
+  "extensions": {
+    "colorMeta": {
+      "bg": { "role": "neutral", "displayName": "Warm paper" },
+      "ink": { "role": "neutral", "displayName": "Soft charcoal" },
+      "muted": { "role": "neutral", "displayName": "Quiet gray" },
+      "line": { "role": "neutral", "displayName": "Pale rule" },
+      "surface": { "role": "neutral", "displayName": "White surface" },
+      "accent": { "role": "primary", "displayName": "Warm ochre" },
+      "ink-hover": { "role": "neutral", "displayName": "Hover charcoal" },
+      "selection": { "role": "neutral", "displayName": "Warm selection" },
+      "code-bg": { "role": "neutral", "displayName": "Code paper" }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "Headline", "purpose": "Page and home headings; the system font stack is inherited by the site." },
+      "title": { "displayName": "Title", "purpose": "Article section and contact headings." },
+      "body": { "displayName": "Article body", "purpose": "Long-form privacy and support paragraphs." },
+      "label": { "displayName": "Navigation label", "purpose": "Header navigation and language links." },
+      "action": { "displayName": "Action label", "purpose": "Filled email and home links." }
+    },
+    "shadows": [],
+    "motion": [],
+    "breakpoints": [
+      { "name": "document-stack", "value": "860px" },
+      { "name": "narrow", "value": "620px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Filled action link",
+      "kind": "button",
+      "refersTo": "action-link",
+      "description": "An ordinary email or home link with the site's filled action treatment.",
+      "html": "<a class=\"ds-action\" href=\"mailto:lenny996@163.com\">Email support<span aria-hidden=\"true\"> ↗</span></a>",
+      "css": ".ds-action{display:inline-flex;align-items:center;justify-content:center;gap:16px;min-height:48px;background:var(--ink,#20201F);color:var(--surface,#fff);text-decoration:none;padding:10px 20px;border-radius:10px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang HK','Noto Sans CJK TC',sans-serif;font-size:.95rem;font-weight:500;line-height:1.75;max-width:100%;text-align:center;overflow-wrap:anywhere}.ds-action:hover{color:var(--surface,#fff);background:#3A3935}.ds-action:focus-visible{outline:2px solid var(--ink,#20201F);outline-offset:5px;border-radius:3px}"
+    },
+    {
+      "name": "Header and language navigation",
+      "kind": "nav",
+      "refersTo": "navigation-link",
+      "description": "Plain navigation with an underlined current destination and paired language routes.",
+      "html": "<div class=\"ds-header-nav\"><nav class=\"ds-top-nav\" aria-label=\"Main navigation\"><a href=\"/en/privacy/\" aria-current=\"page\">Privacy</a><a href=\"/en/support/\">Support</a></nav><nav class=\"ds-languages\" aria-label=\"Language\"><a href=\"/privacy/\" lang=\"zh-HK\" hreflang=\"zh-HK\">繁體中文</a><span aria-hidden=\"true\">/</span><a href=\"/en/privacy/\" lang=\"en\" hreflang=\"en\" aria-current=\"page\">English</a></nav></div>",
+      "css": ".ds-header-nav{display:flex;align-items:center;gap:32px;color:var(--ink,#20201F);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang HK','Noto Sans CJK TC',sans-serif;line-height:1.75}.ds-top-nav{display:flex;gap:24px;margin-left:auto}.ds-languages{display:flex;gap:10px;align-items:center;white-space:nowrap}.ds-header-nav a{display:inline-flex;min-height:44px;align-items:center;font-size:.875rem;color:inherit;text-decoration:none;text-underline-offset:4px;text-decoration-thickness:1px;overflow-wrap:anywhere}.ds-header-nav [aria-current]{text-decoration:underline;font-weight:600}.ds-header-nav a:hover{color:var(--accent,#895B05)}.ds-header-nav a:focus-visible{outline:2px solid var(--ink,#20201F);outline-offset:5px;border-radius:3px}.ds-languages>span{font-size:.75rem;color:var(--muted,#686762)}@media(max-width:860px){.ds-header-nav{gap:20px}.ds-top-nav{gap:16px}}@media(max-width:620px){.ds-header-nav{flex-wrap:wrap;gap:2px 18px}.ds-languages{margin-left:auto;gap:8px}.ds-languages a{font-size:.8rem}.ds-top-nav{order:3;width:100%;margin-left:0;gap:24px}}"
+    },
+    {
+      "name": "Home resource row",
+      "kind": "custom",
+      "refersTo": "resource-row",
+      "description": "A ruled full-row link to a support or privacy page.",
+      "html": "<a class=\"ds-resource\" href=\"/en/support/\"><span class=\"ds-resource-arrow\" aria-hidden=\"true\">↗</span><h2>Get support</h2><p>Creating orders, restoring Pro, protecting backups and sharing notices.</p><span class=\"ds-resource-cue\">Read support</span></a>",
+      "css": ".ds-resource{display:block;position:relative;padding:28px 30px 28px 0;border-bottom:1px solid var(--line,#E8E6E1);color:var(--ink,#20201F);text-decoration:none;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang HK','Noto Sans CJK TC',sans-serif;line-height:1.75;overflow-wrap:anywhere}.ds-resource-arrow{position:absolute;right:0;top:27px;font-size:1.35rem}.ds-resource h2{margin:0;font-size:1.35rem;line-height:1.5;font-weight:600;letter-spacing:-.015em}.ds-resource p{color:var(--muted,#686762);font-size:.95rem;margin:10px 0 0}.ds-resource-cue{display:inline-block;margin-top:16px;font-size:.875rem;font-weight:500;text-decoration:underline;text-underline-offset:4px;text-decoration-thickness:1px}.ds-resource:hover{color:var(--accent,#895B05)}.ds-resource:focus-visible{outline:2px solid var(--ink,#20201F);outline-offset:5px;border-radius:3px}@media(max-width:620px){.ds-resource{padding-top:24px;padding-bottom:24px}}"
+    },
+    {
+      "name": "Document topic navigation",
+      "kind": "nav",
+      "refersTo": "topic-link",
+      "description": "A sticky desktop topic index that becomes a static two-column grid below 860px.",
+      "html": "<aside class=\"ds-toc\"><nav aria-label=\"On this page\"><h2>On this page</h2><ol><li><a href=\"/en/privacy/#scope\">What this policy covers</a></li><li><a href=\"/en/privacy/#local\">Information kept on your device</a></li><li><a href=\"/en/privacy/#email\">Support email</a></li><li><a href=\"/en/privacy/#website\">Website hosting and access data</a></li></ol></nav></aside>",
+      "css": ".ds-toc{position:sticky;top:28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang HK','Noto Sans CJK TC',sans-serif;font-size:.82rem;line-height:1.75;color:var(--muted,#686762)}.ds-toc h2{font-size:.8rem;line-height:1.5;font-weight:600;letter-spacing:.03em;color:var(--ink,#20201F);margin:0 0 12px}.ds-toc ol{list-style:none;margin:0;padding:0}.ds-toc li+li{margin-top:4px}.ds-toc a{display:block;min-height:44px;padding:7px 0;color:inherit;text-decoration:none;text-underline-offset:4px;text-decoration-thickness:1px;overflow-wrap:anywhere}.ds-toc a:hover{color:var(--accent,#895B05);text-decoration:underline}.ds-toc a:focus-visible{outline:2px solid var(--ink,#20201F);outline-offset:5px;border-radius:3px}@media(max-width:860px){.ds-toc{position:static;padding-bottom:16px;border-bottom:1px solid var(--line,#E8E6E1)}.ds-toc ol{display:grid;grid-template-columns:1fr 1fr;gap:2px 20px}.ds-toc li+li{margin-top:0}}@media(max-width:620px){.ds-toc ol{gap:2px 16px}.ds-toc a{font-size:.8rem;line-height:1.6}}"
+    },
+    {
+      "name": "Support contact panel",
+      "kind": "card",
+      "refersTo": "contact-panel",
+      "description": "A flat white contact surface with an email action and a visible address.",
+      "html": "<div class=\"ds-contact\"><div><h2>Contact support</h2><p>Tell us the app version, iOS version and what happened. Redact customer and payment information first.</p></div><a class=\"ds-contact-action\" href=\"mailto:lenny996@163.com\">Email support<span aria-hidden=\"true\"> ↗</span></a><a class=\"ds-contact-address\" href=\"mailto:lenny996@163.com\">lenny996@163.com</a></div>",
+      "css": ".ds-contact{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px 28px;align-items:center;background:var(--surface,#fff);color:var(--ink,#20201F);border:1px solid var(--line,#E8E6E1);border-radius:14px;padding:24px 28px;margin-bottom:44px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang HK','Noto Sans CJK TC',sans-serif;line-height:1.75}.ds-contact h2{margin:0;font-size:1.22rem;line-height:1.5;font-weight:600;letter-spacing:-.015em;overflow-wrap:anywhere}.ds-contact p{font-size:.9rem;color:var(--muted,#686762);margin:6px 0 0;max-width:650px;overflow-wrap:anywhere}.ds-contact a{color:inherit;text-underline-offset:4px;text-decoration-thickness:1px;overflow-wrap:anywhere}.ds-contact .ds-contact-action{display:inline-flex;align-items:center;justify-content:center;gap:16px;min-height:48px;background:var(--ink,#20201F);color:var(--surface,#fff);text-decoration:none;padding:10px 20px;border-radius:10px;font-size:.95rem;font-weight:500;max-width:100%;text-align:center}.ds-contact .ds-contact-action:hover{color:var(--surface,#fff);background:#3A3935}.ds-contact-address{grid-column:1/-1;font-size:.875rem;justify-self:start;min-height:44px;padding-top:6px}.ds-contact-address:hover{color:var(--accent,#895B05)}.ds-contact a:focus-visible{outline:2px solid var(--ink,#20201F);outline-offset:5px;border-radius:3px}@media(max-width:620px){.ds-contact{grid-template-columns:1fr;padding:20px;gap:12px;margin-bottom:28px}.ds-contact h2{font-size:1.1rem}.ds-contact-action{justify-self:start}.ds-contact-address{font-size:.85rem}}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Premium Minimal",
+    "overview": "A quiet Read surface: compact editorial introductions lead into practical support and long-form privacy text. Warm paper, dark type, white contact panels and fine rules carry the hierarchy. The official App icon provides the established identity.\n\nThis contract describes the built `public/` site only: six Traditional Chinese and English routes, plus a shared bilingual 404. It does not define the App interface. Product facts and policy wording remain in `AUDIT.md` and the page sources.",
+    "keyCharacteristics": [
+      "System typography with generous paragraph leading.",
+      "Flat surfaces, light dividers and restrained link accents.",
+      "Paired language routes with the same component structure.",
+      "Plain HTML, CSS and a local icon; ordinary links support reading and contact."
+    ],
+    "rules": [],
+    "dos": [
+      "Do preserve the warm canvas, charcoal text, white panels and light borders.",
+      "Do retain the inherited system font stack and the official App icon unchanged.",
+      "Do maintain equivalent bilingual navigation and readable, wrapping text.",
+      "Do preserve visible keyboard focus, generous link targets and the mobile topic grid."
+    ],
+    "donts": [
+      "Don't turn the ruled reading layout into a collection of elevated cards.",
+      "Don't introduce remote fonts, scripts, forms or analytics into this static site.",
+      "Don't hide policy or support sections behind interactive disclosure controls.",
+      "Don't extend this site-specific contract to the App or replace product facts with design guidance."
+    ]
+  }
+}
