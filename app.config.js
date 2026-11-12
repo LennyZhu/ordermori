@@ -13,9 +13,24 @@ const isPublicHttps = (value) => {
   } catch { return false; }
 };
 
-// Keep personal signing settings in the existing local config. EAS excludes
-// ios/ and regenerates native version, device family and resources via Prebuild.
+function readLocalSigning() {
+  const file = path.join(projectRoot, 'config/signing.local.json');
+  if (!fs.existsSync(file)) return {};
+
+  try {
+    const { appleTeamId, usesNonExemptEncryption } = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (typeof appleTeamId === 'string' && /^[A-Z0-9]{10}$/.test(appleTeamId) &&
+        (usesNonExemptEncryption === undefined || typeof usesNonExemptEncryption === 'boolean')) {
+      return { appleTeamId, usesNonExemptEncryption };
+    }
+  } catch {
+    // Keep private file contents out of config diagnostics.
+  }
+  throw new Error('Invalid config/signing.local.json. Check appleTeamId and the optional usesNonExemptEncryption boolean.');
+}
+
 module.exports = ({ config }) => {
+  const signing = config.ios?.appleTeamId ? {} : readLocalSigning();
   const projectId = release.easProjectId ?? config.extra?.eas?.projectId;
   const icon = release.iconPath;
   const missing = [];
@@ -45,8 +60,20 @@ module.exports = ({ config }) => {
       },
     },
     locales: { ...(config.locales ?? {}), en: './locales/en.json', 'zh-HK': './locales/zh-HK.json' },
-    ios: { ...config.ios, bundleIdentifier: 'com.zhushunli.ordermori', supportsTablet: false, buildNumber: release.iosBuildNumber,
-      infoPlist: { ...config.ios?.infoPlist, CFBundleAllowMixedLocalizations: true } },
+    ios: {
+      ...config.ios,
+      ...(signing.appleTeamId ? { appleTeamId: signing.appleTeamId } : {}),
+      bundleIdentifier: 'com.zhushunli.ordermori',
+      supportsTablet: false,
+      buildNumber: release.iosBuildNumber,
+      infoPlist: {
+        ...(typeof signing.usesNonExemptEncryption === 'boolean'
+          ? { ITSAppUsesNonExemptEncryption: signing.usesNonExemptEncryption }
+          : {}),
+        ...config.ios?.infoPlist,
+        CFBundleAllowMixedLocalizations: true,
+      },
+    },
     plugins: [
       ...(config.plugins ?? []),
       ['expo-localization', { supportedLocales: { ios: ['zh-HK', 'en'], android: ['zh-HK', 'en'] } }],

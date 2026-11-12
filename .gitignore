@@ -13,6 +13,7 @@ coverage/
 .env.*
 .envrc
 .envrc.local
+/config/signing.local.json
 .vercel/
 !.env.example
 !.env.*.example
