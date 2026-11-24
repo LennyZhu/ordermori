@@ -3,7 +3,7 @@ import { Image } from 'react-native';
 import { Directory, File, FileMode } from 'expo-file-system';
 import { randomUUID } from 'expo-crypto';
 import { DomainError } from '../domain/model';
-import type { PaymentAsset, QrState } from '../domain/payment';
+import type { QrPaymentKind, PaymentAsset, QrState } from '../domain/payment';
 import { copyOfficialQr } from './qrCopy';
 import type { QrCopyPort, QrFileInfo } from './qrCopy';
 
@@ -43,7 +43,7 @@ const filePort: QrCopyPort = {
     if (target.exists) await target.delete();
   },
 };
-export async function chooseOfficialQr(shopId: string, kind: 'fps' | 'payme'): Promise<PaymentAsset | null> {
+export async function chooseOfficialQr(shopId: string, kind: QrPaymentKind): Promise<PaymentAsset | null> {
   try {
     const ImagePicker = await import('expo-image-picker');
     const result = await ImagePicker.launchImageLibraryAsync({

@@ -1,5 +1,5 @@
 import { DomainError } from '../domain/model.ts';
-import type { PaymentAsset } from '../domain/payment.ts';
+import type { QrPaymentKind, PaymentAsset } from '../domain/payment.ts';
 
 export interface QrFileInfo { bytes: number; sha256: string; mime: PaymentAsset['mime']; width: number; height: number }
 export interface QrCopyPort {
@@ -7,7 +7,7 @@ export interface QrCopyPort {
   copy(source: string, relativePath: string): Promise<string>;
   removeNewFile(relativePath: string): Promise<void>;
 }
-export async function copyOfficialQr(source: string, shopId: string, kind: 'fps' | 'payme', id: string, io: QrCopyPort): Promise<PaymentAsset> {
+export async function copyOfficialQr(source: string, shopId: string, kind: QrPaymentKind, id: string, io: QrCopyPort): Promise<PaymentAsset> {
   let relativePath: string | null = null;
   let copiedByThisRequest = false;
   try {

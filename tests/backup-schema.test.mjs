@@ -5,13 +5,15 @@ import { DatabaseSync } from 'node:sqlite';
 import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { OrderStore } from '../src/data/store.ts';
 import { MIGRATIONS, SCHEMA_VERSION } from '../src/data/migrations.ts';
 import { blankInput } from '../src/domain/model.ts';
 import { emptyPayment, snapshotOf } from '../src/domain/payment.ts';
-import { checkSchema, readBackupData, replaceData } from '../src/backup/data.ts';
+import { checkSchema, migrateInspected, readBackupData, replaceData, TABLES, validateData } from '../src/backup/data.ts';
+import { fixture, DATE } from './helpers/notice-bilingual.mjs';
+import { buildNotice, noticeSourceKey } from '../src/domain/notice.ts';
 import { schemaDifferences } from '../src/backup/schemaDiagnostics.ts';
 import { writeArchive, inspectArchive, copyEntry } from '../src/backup/archive.ts';
 
@@ -109,4 +111,170 @@ test('real WAL backup of historical schema passes the shared export/import guard
       assert.deepEqual(await readBackupData(port(db)),before);
     }finally{imported.close();}
   }finally{db.close();target.close();rmSync(dir,{recursive:true,force:true});}
+});
+
+const hash = text => createHash('sha256').update(text).digest('hex');
+const paymentImage = (kind, shopId, suffix) => {
+  const id = `10000000-0000-4000-8000-${String(suffix).padStart(12, '0')}`;
+  return { id, shopId, kind, relativePath: `payment-assets/${id}.png`, mime: 'image/png', bytes: 68,
+    sha256: 'a'.repeat(64), width: 1, height: 1 };
+};
+const rawData = db => Object.fromEntries(TABLES.map(table => [table, db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()]));
+
+async function seedLegacyPayments(f) {
+  await f.store.saveShop('合成店舖', '');
+  const shop = await f.store.getShop();
+  const sources = [];
+  for (const kind of ['fps', 'payme', 'bank']) {
+    const photo = kind === 'bank' ? null : paymentImage(kind, shop.id, sources.length + 1);
+    if (photo) await f.store.registerPaymentAsset(photo);
+    await f.store.savePaymentMethod(kind, {
+      ...emptyPayment(), confirmed: true, qrAssetId: photo?.id ?? null,
+      ...(kind === 'bank' ? { bankName: 'TEST', accountName: 'TEST', accountNumber: 'TEST' } : {}),
+    });
+    const method = (await f.store.getPaymentSettings()).methods.find(entry => entry.kind === kind);
+    await f.store.setDefaultPaymentMethod(method.methodId);
+    const draft = await f.store.openDraft();
+    const input = { ...draft.input, buyer: 'synthetic', items: [{ id: 'item', name: 'Synthetic', price: '1', quantity: '1' }] };
+    const id = await f.store.createOrder(draft.requestId, input);
+    const doc = buildNotice(await f.store.getNoticeContext(id));
+    const fileId = randomUUID();
+    const source = noticeSourceKey(doc);
+    await f.store.recordNoticeFile({ id: fileId, orderId: id, shopId: shop.id, orderRevision: doc.orderRevision,
+      preferencesRevision: doc.preferencesRevision, template: doc.template, locale: doc.locale,
+      relativePath: `payment-notices/${fileId}.png`, width: 1080, height: 1, bytes: 68, sha256: 'b'.repeat(64),
+      dataHash: hash(source), createdAt: DATE }, source);
+    sources.push({ id, source });
+  }
+  await f.store.changeStatus(sources[0].id, 1, 'mark_paid', 'synthetic');
+  await f.store.openDraft();
+  return sources;
+}
+
+test('v10 live and inspection-copy paths preserve every row and converge with fresh v11', async () => {
+  const folder = mkdtempSync(join(tmpdir(), 'ordermori-v11-'));
+  const f = await fixture(10, false, join(folder, 'legacy.sqlite'));
+  const fresh = new DatabaseSync(':memory:');
+  let copy;
+  try {
+    const sources = await seedLegacyPayments(f);
+    const before = rawData(f.db);
+    const priorSchema = metadata(f.db);
+    assert.equal(await checkSchema(f.adapter, reference), 10);
+    await f.adapter.exec('PRAGMA query_only=OFF');
+    const copyPath = join(folder, 'staged.sqlite');
+    f.db.prepare('VACUUM INTO ?').run(copyPath);
+    copy = new DatabaseSync(copyPath);
+    assert.equal(await checkSchema(port(copy), reference), 10);
+    await migrateInspected(port(copy));
+    await f.store.initialize();
+    const freshPort = port(fresh);
+    await new OrderStore(freshPort, randomUUID, () => DATE).initialize();
+    for (const [db, adapter] of [[f.db, f.adapter], [copy, port(copy)], [fresh, freshPort]]) {
+      assert.equal(await checkSchema(adapter, reference), 11);
+      assert.deepEqual(metadata(db), metadata(fresh));
+      assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
+    }
+    assert.deepEqual(rawData(f.db), before);
+    assert.deepEqual(rawData(copy), before);
+    assert.equal((await readBackupData(port(copy))).notice_files.length, 3);
+    for (const { id, source } of sources.slice(1)) {
+      assert.equal(noticeSourceKey(buildNotice(await f.store.getNoticeContext(id))), source);
+    }
+    for (const { id, source } of sources) {
+      assert.equal(f.db.prepare('SELECT data_hash FROM notice_files WHERE order_id=?').get(id).data_hash, hash(source));
+    }
+    await f.adapter.exec('PRAGMA query_only=OFF');
+    assert.equal(f.db.prepare('PRAGMA foreign_keys').get().foreign_keys, 1);
+    assert.equal(f.db.prepare("SELECT count(*) AS total FROM sqlite_schema WHERE type='index' AND tbl_name IN ('payment_assets','payment_methods','order_payment_snapshots','shop_payment_defaults')").get().total, 8);
+    assert.throws(() => f.db.prepare('UPDATE order_payment_snapshots SET payload=payload WHERE order_id=?').run(sources[0].id), /snapshot is locked/);
+    assert.throws(() => f.db.prepare('DELETE FROM order_payment_snapshots WHERE order_id=?').run(sources[0].id), /snapshot is locked/);
+    assert.throws(() => f.db.prepare('UPDATE payment_assets SET sha256=sha256').run(), /metadata is immutable/);
+    assert.deepEqual(metadata(f.db).filter(row => row.type === 'trigger'), priorSchema.filter(row => row.type === 'trigger'));
+    assert.throws(() => f.db.prepare('UPDATE shop_payment_defaults SET method_id=?').run('absent'), /FOREIGN KEY/);
+  } finally {
+    copy?.close();
+    fresh.close();
+    f.db.close();
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test('v11 failure after table rebuild and data copy rolls back data, schema and user_version', async () => {
+  const f = await fixture(10);
+  try {
+    await seedLegacyPayments(f);
+    const before = rawData(f.db);
+    const schema = metadata(f.db);
+    let injected = false;
+    const broken = { ...f.adapter, async exec(sql) {
+      await f.adapter.exec(sql);
+      if (sql.includes('CREATE TEMP TABLE v11_payment_assets')) {
+        assert.equal(f.db.prepare('SELECT count(*) AS total FROM order_payment_snapshots').get().total, 3);
+        assert.match(metadata(f.db).find(row => row.name === 'payment_assets').sql, /alipayhk/);
+        injected = true;
+        throw new Error('injected after v11 row copy');
+      }
+    } };
+    await assert.rejects(new OrderStore(broken, randomUUID, () => DATE).initialize(), /injected after v11 row copy/);
+    assert.equal(injected, true);
+    assert.equal(f.db.prepare('PRAGMA user_version').get().user_version, 10);
+    assert.equal(f.db.prepare('PRAGMA foreign_keys').get().foreign_keys, 1);
+    assert.deepEqual(metadata(f.db), schema);
+    assert.deepEqual(rawData(f.db), before);
+    assert.deepEqual(f.db.prepare('SELECT name FROM sqlite_temp_schema').all(), []);
+    await f.store.initialize();
+    assert.equal(await checkSchema(f.adapter, reference), 11);
+  } finally { f.db.close(); }
+});
+
+test('v11 backup row restore preserves new QR methods and rejects invalid logical asset links', async () => {
+  const f = await fixture();
+  const target = await fixture();
+  try {
+    const shop = await f.store.getShop();
+    await f.store.saveShop('合成店舖', '');
+    for (const [i, kind] of ['alipayhk', 'wechat_pay_hk'].entries()) {
+      const photo = paymentImage(kind, shop.id, i + 1);
+      await f.store.registerPaymentAsset(photo);
+      await f.store.savePaymentMethod(kind, { ...emptyPayment(), accountName: ' Synthetic ', confirmed: true, qrAssetId: photo.id });
+      const method = (await f.store.getPaymentSettings()).methods.find(entry => entry.kind === kind);
+      await f.store.setDefaultPaymentMethod(method.methodId);
+      const draft = await f.store.openDraft();
+      const orderId = await f.store.createOrder(draft.requestId, { ...draft.input, buyer: 'synthetic',
+        items: [{ id: 'item', name: 'Synthetic', price: '1', quantity: '1' }] });
+      const document = buildNotice(await f.store.getNoticeContext(orderId));
+      assert.equal(document.payment.accountName, ' Synthetic ');
+      assert.equal(document.payment.version, 1);
+      assert.equal(document.qr.id, photo.id);
+    }
+    await f.store.openDraft();
+    const data = await readBackupData(f.adapter);
+    assert.equal(await checkSchema(f.adapter, reference), 11);
+    const mutateDraft = (copy, mutate) => {
+      const payload = JSON.parse(copy.drafts[0].payload);
+      mutate(payload.input.payment);
+      copy.drafts[0].payload = JSON.stringify(payload);
+    };
+    for (const mutate of [
+      copy => mutateDraft(copy, payment => { payment.qrAssetId = copy.payment_assets[0].id; }),
+      copy => mutateDraft(copy, payment => { payment.qrAssetId = 'missing'; }),
+      copy => mutateDraft(copy, payment => { payment.shopId = 'other-shop'; }),
+      copy => mutateDraft(copy, payment => { payment.kind = 'unknown'; }),
+      copy => mutateDraft(copy, payment => { payment.unexpected = true; }),
+      copy => { copy.payment_assets[0].kind = 'bank'; },
+      copy => { copy.payment_assets[0].shop_id = 'other-shop'; },
+      copy => { copy.payment_assets[0].kind = 'wechat_pay_hk'; },
+      copy => { copy.payment_methods[0].kind = 'unknown'; },
+    ]) {
+      const invalid = structuredClone(data);
+      mutate(invalid);
+      assert.throws(() => validateData(invalid));
+    }
+    await target.store.maintenance(db => replaceData(db, data, randomUUID(), randomUUID(), DATE));
+    const restored = await readBackupData(target.adapter);
+    for (const table of ['payment_assets', 'payment_methods', 'order_payment_snapshots', 'shop_payment_defaults', 'drafts']) {
+      assert.deepEqual(restored[table], data[table]);
+    }
+  } finally { target.db.close(); f.db.close(); }
 });

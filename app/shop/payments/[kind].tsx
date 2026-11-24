@@ -6,7 +6,7 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useApp } from '../../../src/AppProvider';
 import { errorMessage } from '../../../src/domain/model';
-import { emptyPayment, isPaymentKind, normalizePayment, paymentIssues, paymentName, paymentStatus, paymentStatusText } from '../../../src/domain/payment';
+import { emptyPayment, hasOptionalPayee, isPaymentKind, normalizePayment, paymentIssues, paymentName, paymentStatus, paymentStatusText } from '../../../src/domain/payment';
 import type { PaymentAsset, PaymentInput, QrState } from '../../../src/domain/payment';
 import { chooseOfficialQr } from '../../../src/data/paymentFiles';
 import { ErrorNotice, Loading, color, s } from '../../../src/ui/common';
@@ -17,7 +17,7 @@ import { usePaymentKeyboard } from '../../../src/ui/usePaymentKeyboard';
 export default function PaymentEditScreen() {
   useLanguage();
   const { kind: param } = useLocalSearchParams<{ kind: string }>(); const router = useRouter(); const { store } = useApp();
-  const kind = isPaymentKind(param) ? param : null;
+  const kind = isPaymentKind(param) && !hasOptionalPayee(param) ? param : null;
   const [form, setForm] = useState<PaymentInput>(emptyPayment); const [asset, setAsset] = useState<PaymentAsset | null>(null);
   const [qrState, setQrState] = useState<QrState>('none'); const [loaded, setLoaded] = useState(false);
   const [dirty, setDirty] = useState(false); const [error, setError] = useState(''); const [retry, setRetry] = useState(0);

@@ -8,8 +8,8 @@ import type { EntitlementAccess } from '../domain/pro.ts';
 import { freeOrderPermission } from '../domain/quota.ts';
 import { monthlyQuota } from './monthlyQuota.ts';
 import type { Action, Draft, Filter, History, HomeData, Order, OrderDetail, OrderInput, OrderItem, Shop } from '../domain/model.ts';
-import { isPaymentKind, normalizePayment, paymentStatus, snapshotOf } from '../domain/payment.ts';
-import type { PaymentAsset, PaymentChoice, PaymentInput, PaymentKind, PaymentMethod, PaymentSettings, PaymentSnapshot, QrState } from '../domain/payment.ts';
+import { hasOptionalPayee, isQrPaymentKind, isPaymentKind, normalizePayment, paymentStatus, snapshotOf } from '../domain/payment.ts';
+import type { QrPaymentKind, PaymentAsset, PaymentChoice, PaymentInput, PaymentKind, PaymentMethod, PaymentSettings, PaymentSnapshot, QrState } from '../domain/payment.ts';
 import { buildNotice, defaultNoticePreferences, noticeSourceKey, noticeFileLocale, noticeFileBranding, NOTICE_TEMPLATES } from '../domain/notice.ts';
 import type { NoticeContext, NoticeFileRecord, NoticePreferences } from '../domain/notice.ts';
 import { noticeFailure, NoticeStageError } from '../domain/noticeDiagnostics.ts';
@@ -26,7 +26,7 @@ export interface DatabasePort {
 interface State { active_shop_id: string; created_count: number; order_number_seq: number }
 interface DraftRow { shop_id: string; request_id: string; edit_seq: number; payload: string; is_active: number }
 interface PaymentRow { id: string; shop_id: string; kind: PaymentKind; payload: string; revision: number; updated_at: string }
-interface AssetRow { id: string; shop_id: string; kind: 'fps' | 'payme'; relative_path: string; mime: PaymentAsset['mime']; byte_count: number; sha256: string; width: number; height: number }
+interface AssetRow { id: string; shop_id: string; kind: QrPaymentKind; relative_path: string; mime: PaymentAsset['mime']; byte_count: number; sha256: string; width: number; height: number }
 
 export class OrderStore {
   private paused = false;
@@ -192,7 +192,7 @@ export class OrderStore {
   async registerPaymentAsset(asset: PaymentAsset) {
     return this.enqueue(async () => {
       const state = await this.state();
-      if (asset.shopId !== state.active_shop_id || !['fps', 'payme'].includes(asset.kind) ||
+      if (asset.shopId !== state.active_shop_id || !isQrPaymentKind(asset.kind) ||
         !/^payment-assets\/[a-f0-9-]{36}\.(png|jpg)$/.test(asset.relativePath) || !/^[a-f0-9]{64}$/.test(asset.sha256) ||
         !['image/png', 'image/jpeg'].includes(asset.mime) || !Number.isSafeInteger(asset.bytes) || asset.bytes <= 0 || asset.bytes > 20 * 1024 * 1024 ||
         !Number.isInteger(asset.width) || !Number.isInteger(asset.height) || asset.width <= 0 || asset.height <= 0 || Math.max(asset.width, asset.height) > 12000 || asset.width * asset.height > 40000000 ||
@@ -212,6 +212,12 @@ export class OrderStore {
         const old = await this.db.first<PaymentRow>('SELECT * FROM payment_methods WHERE shop_id=? AND kind=?', [state.active_shop_id, kind]);
         if (expectedRevision !== undefined && (old?.revision ?? null) !== expectedRevision) throw new DomainError('conflict', '收款設定已更新，請返回列表重新開啟。');
         if (value.qrAssetId && !await this.assetById(value.qrAssetId, state.active_shop_id, kind)) throw new DomainError('asset', '圖片不屬於此收款方式，未變更設定。');
+        // A saved confirmation applies to the exact name and image it covered.
+        const previous = old && this.paymentFromRow(old);
+        if (hasOptionalPayee(kind) && previous?.confirmed &&
+            (previous.accountName !== value.accountName || previous.qrAssetId !== value.qrAssetId)) {
+          value.confirmed = false;
+        }
         const now = this.now();
         await this.db.run(`INSERT INTO payment_methods(id,shop_id,kind,payload,qr_asset_id,revision,updated_at) VALUES(?,?,?,?,?,?,?)
           ON CONFLICT(shop_id,kind) DO UPDATE SET payload=excluded.payload,qr_asset_id=excluded.qr_asset_id,revision=excluded.revision,updated_at=excluded.updated_at`,

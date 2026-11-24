@@ -313,3 +313,70 @@ test('QR copy preserves selected bytes and hash; failed or corrupt copy cleans o
     assert.deepEqual(readFileSync(old), bytes);
   } finally { rmSync(folder, { recursive: true, force: true }); }
 });
+
+for (const [kind, otherKind] of [['alipayhk', 'wechat_pay_hk'], ['wechat_pay_hk', 'alipayhk']]) {
+  test(`${kind}: ready/default/confirmation rules and historical snapshots in SQLite`, async () => {
+    const { store, db, health } = await setup();
+    try {
+      const shop = await store.getShop();
+      const original = asset(shop.id, '1', kind);
+      const replacement = asset(shop.id, '2', kind);
+      const wrong = asset(shop.id, '3', otherKind);
+      for (const photo of [original, replacement, wrong]) await store.registerPaymentAsset(photo);
+      for (const invalid of [{ ...original, kind: 'bank' }, { ...original, kind: 'unknown' }, { ...original, shopId: 'wrong-store' }]) {
+        await assert.rejects(store.registerPaymentAsset(invalid), { code: 'asset' });
+      }
+      await assert.rejects(store.savePaymentMethod('unknown', emptyPayment()), { code: 'payment' });
+      await assert.rejects(store.savePaymentMethod(kind, { ...emptyPayment(), qrAssetId: wrong.id }), { code: 'asset' });
+      const incomplete = await method(store, kind, { ...emptyPayment(), accountName: '商戶' });
+      assert.equal(incomplete.status, 'incomplete');
+      await assert.rejects(store.setDefaultPaymentMethod(incomplete.methodId), { code: 'payment' });
+      assert.equal((await method(store, kind, { ...emptyPayment(), qrAssetId: original.id })).status, 'incomplete');
+      const confirmed = { ...emptyPayment(), qrAssetId: original.id, confirmed: true };
+      const ready = await method(store, kind, confirmed);
+      assert.equal(ready.status, 'ready');
+      await store.setDefaultPaymentMethod(ready.methodId);
+      const draft = await store.openDraft();
+      const historical = snapshotOf(ready);
+      assert.deepEqual(draft.input.payment, historical);
+      const id = await store.createOrder(draft.requestId, { ...orderInput(), payment: historical });
+      const editableOrder = await store.getOrder(id);
+      await store.updateOrder(id, editableOrder.order.revision, { ...toInput(editableOrder), payment: historical });
+      const waiting = await store.openDraft();
+      const edited = { ...confirmed, accountName: ' 商戶 Synthetic ' };
+      const invalidated = await method(store, kind, edited);
+      assert.equal(invalidated.accountName, edited.accountName);
+      assert.equal(invalidated.confirmedAt, null);
+      assert.equal(invalidated.status, 'incomplete');
+      assert.equal((await store.getPaymentSettings()).defaultMethodId, ready.methodId);
+      assert.deepEqual((await store.openDraft()).input.payment, waiting.input.payment);
+      await store.discardDraft(waiting.requestId);
+      const paused = await store.openDraft();
+      assert.equal(paused.input.payment, null);
+      const reconfirmed = await method(store, kind, edited);
+      assert.equal(reconfirmed.status, 'ready');
+      assert.equal((await store.openDraft()).input.payment, null);
+      await store.discardDraft(paused.requestId);
+      const resumed = await store.openDraft();
+      assert.deepEqual(resumed.input.payment, snapshotOf(reconfirmed));
+      for (const state of ['missing', 'invalid']) {
+        health.set(original.id, state);
+        assert.equal((await store.inspectPayment(historical)).status, 'incomplete');
+        assert.equal((await store.getPaymentSettings()).methods.find(m => m.kind === kind).status, 'incomplete');
+      }
+      health.delete(original.id);
+      assert.equal((await method(store, kind, { ...edited, qrAssetId: replacement.id })).confirmedAt, null);
+      await method(store, kind, { ...edited, qrAssetId: replacement.id });
+      assert.equal((await method(store, kind, { ...edited, qrAssetId: null })).confirmedAt, null);
+      assert.deepEqual((await store.getOrder(id)).payment, historical);
+      assert.equal((await store.inspectPayment(historical)).asset.id, original.id);
+      const detail = await store.getOrder(id);
+      await store.changeStatus(id, detail.order.revision, 'mark_paid', 'synthetic');
+      const paid = await store.getOrder(id);
+      await store.changeStatus(id, paid.order.revision, 'correct_payment', 'synthetic');
+      const corrected = await store.getOrder(id);
+      await assert.rejects(store.updateOrder(id, corrected.order.revision, { ...toInput(corrected), payment: null }), { code: 'locked' });
+      assert.throws(() => db.prepare('DELETE FROM order_payment_snapshots WHERE order_id=?').run(id), /snapshot is locked/);
+    } finally { db.close(); }
+  });
+}

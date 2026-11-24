@@ -6,7 +6,7 @@ import type { DatabasePort } from '../data/store.ts';
 import { OrderStore } from '../data/store.ts';
 import { evaluate, toInput } from '../domain/model.ts';
 import type { Order, OrderDetail, OrderItem } from '../domain/model.ts';
-import { normalizePayment } from '../domain/payment.ts';
+import { isQrPaymentKind, normalizePayment } from '../domain/payment.ts';
 import type { PaymentSnapshot } from '../domain/payment.ts';
 import { failBackup, LIMITS } from './archive.ts';
 import { schemaDiagnostic, schemaDifferences } from './schemaDiagnostics.ts';
@@ -140,14 +140,29 @@ export function validateData(data: BackupData): BackupSummary {
     const calculated = evaluate(toInput(detail));
     if (calculated.total !== order.total_cents || calculated.subtotal !== order.subtotal_cents || calculated.shipping !== order.shipping_cents || calculated.discount !== order.discount_cents) failBackup('備份訂單金額校驗失敗。');
   }
-  for (const row of [...data.payment_methods, ...data.order_payment_snapshots]) paymentPayload(row);
+  const assets = new Map(data.payment_assets.map(asset => [asset.id, asset]));
+  for (const asset of assets.values()) if (!isQrPaymentKind(asset.kind)) failBackup('備份收款圖片記錄無效。');
+  function checkPaymentAsset(payment: PaymentSnapshot) {
+    if (payment.qrAssetId === null) return;
+    const asset = assets.get(payment.qrAssetId);
+    if (!asset || asset.shop_id !== payment.shopId || asset.kind !== payment.kind) failBackup('備份收款快照不一致。');
+  }
+  for (const row of [...data.payment_methods, ...data.order_payment_snapshots]) checkPaymentAsset(paymentPayload(row));
   for (const row of data.drafts) {
     const draft = JSON.parse(String(row.payload)); exactKeys(draft, ['version','input']);
     if (draft.version !== 1 || !draft.input || !Array.isArray(draft.input.items) || draft.input.items.length > 20) failBackup('備份草稿格式不支援。');
     exactKeys(draft.input, ['buyer','items','shipping','shippingFee','discount','note','payment','paymentChosen']);
     for (const item of draft.input.items) { exactKeys(item, ['id','name','price','quantity']); if (!['id','name','price','quantity'].every(k => typeof item[k] === 'string')) failBackup('備份草稿商品無效。'); }
     if (!['buyer','shipping','shippingFee','discount','note'].every(k => typeof draft.input[k] === 'string')) failBackup('備份草稿資料無效。');
-    if (draft.input.payment) { exactKeys(draft.input.payment, PAYMENT_KEYS); normalizePayment(draft.input.payment.kind, draft.input.payment); if (draft.input.payment.shopId !== shop.id) failBackup('草稿收款歸屬無效。'); }
+    if (draft.input.payment != null) {
+      const payment: PaymentSnapshot = draft.input.payment;
+      exactKeys(payment, PAYMENT_KEYS);
+      normalizePayment(payment.kind, payment);
+      if (payment.shopId !== shop.id || payment.version !== 1 || !Number.isSafeInteger(payment.revision) ||
+          payment.revision < 1 || typeof payment.methodId !== 'string' || !payment.methodId ||
+          (payment.confirmed && (typeof payment.confirmedAt !== 'string' || !payment.confirmedAt))) failBackup('草稿收款歸屬無效。');
+      checkPaymentAsset(payment);
+    }
   }
   for (const product of data.catalog_products) if (!validProductValues(product.name,product.unit_price_cents) || !Number.isSafeInteger(product.revision) || Number(product.revision) < 1) failBackup('備份常用商品名稱或單價無效。');
   for (const row of data.notice_preferences) if (![0,1].includes(Number(row.hide_branding))) failBackup('備份通知署名設定無效。');

@@ -113,17 +113,17 @@ test('four template/locale combinations enforce branding, preserve customer text
 });
 
 const reference=async()=>{const db=new DatabaseSync(':memory:');return {db:port(db),close:async()=>db.close()};};
-test('v6-v9 backups migrate to v10 without granting Pro or rewriting historic PNG hashes',async()=>{
+test('v6-v9 backups migrate to the current schema without granting Pro or rewriting historic PNG hashes',async()=>{
   for(const version of [6,7,8,9]){const f=await fixture(version,true);try{
-    await order(f);assert.equal(await checkSchema(f.adapter,reference),version);await migrateInspected(f.adapter);const data=await readBackupData(f.adapter);assert.equal(validateData(data).schemaVersion,10);assert.equal(data.notice_files.length,0);
+    await order(f);assert.equal(await checkSchema(f.adapter,reference),version);await migrateInspected(f.adapter);const data=await readBackupData(f.adapter);assert.equal(validateData(data).schemaVersion,11);assert.equal(data.notice_files.length,0);
     const ctx=await f.store.getNoticeContext(f.db.prepare('SELECT id FROM orders LIMIT 1').get().id);assert.equal(ctx.canRemoveBranding,undefined);assert.equal(buildNotice(ctx).branding,'Made with OrderMori');
   }finally{f.db.close();}}
 });
 
-test('v10 backup preserves branding intent/file metadata, but restoring cannot grant Pro; unknown entitlement data rejected',async()=>{
+test('Current backup preserves branding intent/file metadata, but restoring cannot grant Pro; unknown entitlement data rejected',async()=>{
   const f=await fixture(),target=await fixture(),iap=storekit();const store=new OrderStore(f.adapter,randomUUID,()=>DATE,async()=> 'available',iap.service);
   try{const id=await order(f);await own(iap);await store.saveNoticePreferences(id,1,0,{template:'soft',locale:'en',includeNote:false,removeBranding:true});const doc=buildNotice(await store.getNoticeContext(id));const file=fileFor(doc);file.relativePath=`payment-notices/${file.id}.png`;await store.recordNoticeFile(file,noticeSourceKey(doc));
-    const data=await readBackupData(f.adapter);validateData(data);assert.equal(data.notice_files[0].branding,'');assert.equal(await checkSchema(f.adapter,reference),10);
+    const data=await readBackupData(f.adapter);validateData(data);assert.equal(data.notice_files[0].branding,'');assert.equal(await checkSchema(f.adapter,reference),11);
     await target.store.maintenance(db=>replaceData(db,data,randomUUID(),randomUUID(),DATE));const restored=await target.store.getNoticeContext(id);assert.equal(restored.preferences.removeBranding,true);assert.equal(restored.canRemoveBranding,undefined);assert.equal(buildNotice(restored).branding,'Made with OrderMori');assert.equal((await target.store.listNoticeFiles(id))[0].branding,'');
     const forged=structuredClone(data);forged.app_state[0].is_pro=1;assert.throws(()=>validateData(forged));f.db.exec('PRAGMA query_only=OFF; CREATE TABLE fake_entitlement(is_pro INTEGER)');await assert.rejects(checkSchema(f.adapter,reference));
   }finally{f.db.close();target.db.close();}
@@ -134,13 +134,13 @@ test('Paywall copy uses Apple localized price in both languages, ownership and l
   const source=readFileSync('app/shop/pro.tsx','utf8');assert.match(source,/pro\.product\.displayPrice/);assert.match(source,/disabled=\{busy \|\| !pro\.product/);assert.match(source,/pro\.hasPro/);assert.doesNotMatch(source,/HK\$88|\$4\.99|isPro/);
 });
 
-test('v9 to v10 is atomic and retryable, preserving all prior PNG hashes and default branding',async()=>{
+test('The v10 step is atomic and retryable, preserving all prior PNG hashes and default branding',async()=>{
   const f=await fixture(9,true);
   try{const id=await order(f),d=buildNotice(await f.store.getNoticeContext(id)),legacy=fileFor(d);delete legacy.branding;legacy.relativePath=`payment-notices/${legacy.id}.png`;
     await f.store.recordNoticeFile(legacy,noticeSourceKey(d));const oldRows=f.db.prepare('SELECT * FROM notice_files').all(),oldHash=noticeSourceKey(d);
     const broken={...f.adapter,exec:async sql=>{await f.adapter.exec(sql);if(sql.includes('ADD COLUMN branding'))throw Error('Synthetic v10 failure');}};
     await assert.rejects(new OrderStore(broken,randomUUID,()=>DATE).initialize());assert.equal(f.db.prepare('PRAGMA user_version').get().user_version,9);assert.deepEqual(f.db.prepare('SELECT * FROM notice_files').all(),oldRows);assert.ok(!f.db.prepare('PRAGMA table_info(notice_preferences)').all().some(c=>c.name==='hide_branding'));
-    await f.store.initialize();await f.store.initialize();assert.equal(f.db.prepare('PRAGMA user_version').get().user_version,10);
+    await f.store.initialize();await f.store.initialize();assert.equal(f.db.prepare('PRAGMA user_version').get().user_version,11);
     const saved=(await f.store.listNoticeFiles(id))[0];assert.equal(saved.dataHash,legacy.dataHash);assert.equal(saved.sha256,legacy.sha256);assert.equal(saved.branding,undefined);assert.equal(noticeSourceKey(buildNotice(await f.store.getNoticeContext(id))),oldHash);
   }finally{f.db.close();}
 });

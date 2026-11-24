@@ -96,7 +96,7 @@ export function noticeTextBlocks(d: NoticeDocument): Record<string, string> {
     shippingLabel: c.shippingLabel, shipping: d.shippingText,
     itemLabel: c.itemLabel, quantityLabel: c.quantityLabel, unitLabel: c.unitLabel, lineLabel: c.lineLabel,
     subtotalLabel: c.subtotalLabel, subtotal: noticeMoney(d.subtotalCents), totalLabel: c.totalLabel, total: noticeMoney(d.totalCents),
-    paymentTitle: d.payment.kind === 'fps' ? c.fpsTitle : d.payment.kind === 'payme' ? c.paymeTitle : c.bankTitle,
+    paymentTitle: ({ fps: c.fpsTitle, payme: c.paymeTitle, bank: c.bankTitle, alipayhk: c.alipayhkTitle, wechat_pay_hk: c.wechatPayHkTitle })[d.payment.kind],
     reminder: c.reminder,
     legal: c.legal, brand: d.branding,
   };

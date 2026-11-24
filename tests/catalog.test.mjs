@@ -101,10 +101,10 @@ test('v6 -> current on fresh and original historical trigger variants is forward
     const db=new DatabaseSync(':memory:');try{
       const p=adapter(db);await createSchema(p,6,legacy,false,legacy);
       db.prepare('INSERT INTO shops VALUES(?,?,?,?)').run('shop','合成舊店','',date);db.prepare('INSERT INTO app_state(id,profile_id,active_shop_id) VALUES(1,?,?)').run('profile','shop');
-      const old=db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE sql IS NOT NULL AND NOT (type='table' AND name IN ('notice_files','notice_preferences')) ORDER BY name").all();
+      const old=db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE sql IS NOT NULL AND NOT (type='table' AND name IN ('notice_files','notice_preferences','payment_assets','payment_methods','order_payment_snapshots','shop_payment_defaults')) ORDER BY name").all();
       assert.equal(await checkSchema(p,reference),6);await p.exec('PRAGMA query_only=OFF');const store=new OrderStore(p,randomUUID);await store.initialize();await store.initialize();
       assert.equal(db.prepare('PRAGMA user_version').get().user_version,SCHEMA_VERSION);assert.deepEqual(await store.listProducts(),[]);
-      assert.deepEqual(db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'catalog_products%' AND name NOT LIKE 'quota_%' AND NOT (type='table' AND name IN ('notice_files','notice_preferences')) ORDER BY name").all(),old);
+      assert.deepEqual(db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'catalog_products%' AND name NOT LIKE 'quota_%' AND NOT (type='table' AND name IN ('notice_files','notice_preferences','payment_assets','payment_methods','order_payment_snapshots','shop_payment_defaults')) ORDER BY name").all(),old);
       assert.equal(await checkSchema(p,reference),SCHEMA_VERSION);
     }finally{db.close();}
   }

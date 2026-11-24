@@ -1,5 +1,8 @@
 // Canonical interface messages. Customer-entered text and PNG content never pass through this catalog.
 export const catalog = [
+  { id: 'paymentAlipayHk', zh: 'AlipayHK', en: 'AlipayHK' },
+  { id: 'paymentWeChatPayHk', zh: 'WeChat Pay HK', en: 'WeChat Pay HK' },
+  { id: 'paymentMissingQr', zh: '請匯入官方收款碼。', en: 'Import the official payment code.' },
   {
     "id": "m0001",
     "zh": "新增訂單",
