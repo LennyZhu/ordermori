@@ -1,8 +1,17 @@
 // Canonical interface messages. Customer-entered text and PNG content never pass through this catalog.
 export const catalog = [
-  { id: 'paymentAlipayHk', zh: 'AlipayHK', en: 'AlipayHK' },
-  { id: 'paymentWeChatPayHk', zh: 'WeChat Pay HK', en: 'WeChat Pay HK' },
+  { id: 'paymentAlipayHk', zh: 'AlipayHK 支付寶香港', en: 'AlipayHK' },
+  { id: 'paymentWeChatPayHk', zh: 'WeChat Pay HK 微信支付香港', en: 'WeChat Pay HK' },
   { id: 'paymentMissingQr', zh: '請匯入官方收款碼。', en: 'Import the official payment code.' },
+  { id: 'paymentOptionalPayee', zh: '收款人名稱（選填）', en: 'Payee name (optional)' },
+  { id: 'paymentQrSource', zh: '請使用相應支付服務或其授權服務商提供、適合本店收款用途的收款碼。切勿上載付款碼。', en: 'Use a collection QR from the relevant payment service or an authorised provider that is suitable for your shop to receive payments. Do not upload a QR used to make payments.' },
+  { id: 'paymentSaveBeforeReview', zh: '請先儲存變更，再核對並確認新的收款資料。', en: 'Save your changes first, then check and confirm the updated payment details.' },
+  { id: 'paymentReviewSaved', zh: '變更已儲存。請核對新資料，勾選商家確認後再儲存。', en: 'Changes saved. Check the updated details, tick merchant confirmation, then save again.' },
+  { id: 'paymentReadyToSave', zh: '已填妥，待儲存', en: 'Complete, pending save' },
+  { id: 'paymentSavedReadFailed', zh: '資料已儲存，但未能讀回確認狀態。請重新讀取。', en: 'Details were saved, but confirmation status could not be read. Reload the settings.' },
+  { id: 'paymentImageMissing', zh: '圖片缺失', en: 'Image missing' },
+  { id: 'paymentImageInvalid', zh: '圖片無效', en: 'Image invalid' },
+  { id: 'paymentShopSummary', zh: 'FPS、PayMe、AlipayHK、WeChat Pay HK 及銀行轉帳', en: 'FPS, PayMe, AlipayHK, WeChat Pay HK and bank transfer' },
   {
     "id": "m0001",
     "zh": "新增訂單",

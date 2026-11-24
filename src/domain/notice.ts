@@ -2,7 +2,7 @@ import { isNoticeLocale, noticeCopy, noticeShippingText } from './noticeCopy.ts'
 import type { NoticeLocale } from './noticeCopy.ts';
 import { DomainError, countChars, editable } from './model.ts';
 import type { Order, OrderDetail } from './model.ts';
-import { paymentIssues, paymentStatus, snapshotOf } from './payment.ts';
+import { hasOptionalPayee, paymentIssues, paymentStatus, snapshotOf } from './payment.ts';
 import type { PaymentAsset, PaymentChoice } from './payment.ts';
 export { NOTICE_LOCALES, noticeLocaleName } from './noticeCopy.ts';
 export type { NoticeLocale } from './noticeCopy.ts';
@@ -113,6 +113,8 @@ export function noticeTextBlocks(d: NoticeDocument): Record<string, string> {
     blocks.paymentLabel = { id: c.fpsId, phone: c.fpsPhone, email: c.fpsEmail }[d.payment.fpsType]; blocks.paymentValue = d.payment.fpsValue;
   } else if (d.payment.kind === 'bank') {
     blocks.bankLabel = c.bankLabel; blocks.bank = d.payment.bankName; blocks.payeeLabel = c.payeeLabel; blocks.payee = d.payment.accountName; blocks.accountLabel = c.accountLabel; blocks.account = d.payment.accountNumber;
+  } else if (hasOptionalPayee(d.payment.kind) && d.payment.accountName.trim()) {
+    blocks.payeeLabel = c.qrPayeeLabel; blocks.payee = d.payment.accountName;
   }
   if (d.qr) { blocks.qrLabel = c.qrLabel; blocks.qrReminder = c.qrReminder; }
   return blocks;

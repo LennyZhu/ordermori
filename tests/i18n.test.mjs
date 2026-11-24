@@ -11,7 +11,7 @@ import { LanguageController, resolveSystemLocale, LANGUAGE_KEY } from '../src/i1
 import { OrderStore } from '../src/data/store.ts';
 import { appendCatalogProduct } from '../src/domain/catalog.ts';
 import { buildNotice, noticeSourceKey } from '../src/domain/notice.ts';
-import { emptyPayment, snapshotOf } from '../src/domain/payment.ts';
+import { emptyPayment, isPaymentKind, PAYMENT_KINDS, paymentName, snapshotOf } from '../src/domain/payment.ts';
 import { FREE_LIMIT, blankInput, evaluate } from '../src/domain/model.ts';
 import { readBackupData } from '../src/backup/data.ts';
 const storage = (initial=null) => { const data=new Map(initial ? [[LANGUAGE_KEY,initial]] : []); return {data,getItem:async key=>data.get(key)??null,setItem:async(key,value)=>{data.set(key,value);}}; };
@@ -54,6 +54,16 @@ test('form validation, confirmations, asynchronous canonical errors and nested p
   assert.match(trMessage('FPS 轉數快資料已儲存。'),/^FPS details saved/);
   assert.equal(trMessage('請匯入 PayMe 官方收款碼。\n請核對資料後勾選商家確認。'),'Import an official PayMe payment code.\nCheck the details, then select merchant confirmation.');
   await language.select('zh-HK');assert.equal(trMessage('請填寫商品名稱。'),'請填寫商品名稱。');
+});
+test('all five payment names appear in product order and translate in both interface locales', async () => {
+  assert.deepEqual(PAYMENT_KINDS, ['fps', 'payme', 'alipayhk', 'wechat_pay_hk', 'bank']);
+  assert.ok(PAYMENT_KINDS.every(isPaymentKind));
+  assert.equal(isPaymentKind('wechat_pay_cn'), false);
+  await language.initialize(storage('en'), []);
+  assert.deepEqual(PAYMENT_KINDS.map(kind => tr(paymentName[kind])), ['FPS', 'PayMe', 'AlipayHK', 'WeChat Pay HK', 'Bank transfer']);
+  assert.match(trMessage(`${paymentName.wechat_pay_hk}已儲存，仍未完成設定。`), /^WeChat Pay HK/);
+  await language.select('zh-HK');
+  assert.deepEqual(PAYMENT_KINDS.map(kind => tr(paymentName[kind])), ['FPS 轉數快', 'PayMe', 'AlipayHK 支付寶香港', 'WeChat Pay HK 微信支付香港', '銀行轉帳']);
 });
 function files(dir){return readdirSync(dir,{withFileTypes:true}).flatMap(e=>e.isDirectory()?files(`${dir}/${e.name}`):e.name.endsWith('.tsx')?[`${dir}/${e.name}`]:[]);}
 test('every explicit translated literal/template in formal UI has a catalog entry',()=>{

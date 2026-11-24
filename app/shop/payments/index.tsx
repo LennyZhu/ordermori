@@ -66,10 +66,11 @@ export default function PaymentsScreen() {
     {!!error && <ErrorNotice message={trMessage(error)} retry={() => setRetry((v) => v + 1)} />}
     {!!notice && <Text accessibilityLiveRegion="polite" style={[e.caption, { color: color.green }]}>{trMessage(notice)}</Text>}
     {busy && <Text accessibilityLiveRegion="polite" style={e.caption}>{tr`正在儲存預設收款方式…`}</Text>}
-    <View style={e.surface}>{PAYMENT_KINDS.filter(kind => !hasOptionalPayee(kind)).map((kind, index) => {
+    <View style={e.surface}>{PAYMENT_KINDS.map((kind, index) => {
       const method = data?.methods.find((entry) => entry.kind === kind); const selected = method && data?.defaultMethodId === method.methodId;
       const ready = method?.status === 'ready';
       const status = ready ? tr("已填妥 · 商家已確認") : method?.status === 'incomplete' ? tr("資料未完成") : tr("尚未設定");
+      const imageIssue = method?.qrState === 'missing' ? tr("圖片缺失") : method?.qrState === 'invalid' ? tr("圖片無效") : '';
       return <View key={kind}>
         {index > 0 && <View style={[e.divider, { marginLeft: 46, marginRight: 14 }]} />}
         <View style={[e.row, { paddingLeft: 14, paddingRight: 4, gap: 2 }]}>
@@ -79,6 +80,8 @@ export default function PaymentsScreen() {
             <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
               <Text style={[e.body, { fontWeight: '500' }]}>{tr(paymentName[kind])}</Text>
               <Text style={e.caption}>{status}{selected && !ready ? tr(" · 預設暫停") : ''}</Text>
+              {!!imageIssue && <Text style={e.caption}>{imageIssue}</Text>}
+              {hasOptionalPayee(kind) && !!method?.accountName.trim() && <Text style={e.caption}>{method.accountName}</Text>}
             </View>
           </Pressable>
           {ready ? <Pressable accessibilityRole="button" accessibilityLabel={`${tr(paymentName[kind])}：${selected ? tr("預設") : tr("設為預設")}`}

@@ -11,6 +11,7 @@ import { OrderStore } from '../src/data/store.ts';
 import { MIGRATIONS, SCHEMA_VERSION } from '../src/data/migrations.ts';
 import { blankInput, toInput } from '../src/domain/model.ts';
 import { emptyPayment, normalizePayment, paymentStatus, snapshotOf } from '../src/domain/payment.ts';
+import { buildNotice, noticeSourceKey, noticeTextBlocks } from '../src/domain/notice.ts';
 import { hasDraftInput } from '../src/ui/home.ts';
 import { copyOfficialQr } from '../src/data/qrCopy.ts';
 
@@ -302,6 +303,12 @@ test('QR copy preserves selected bytes and hash; failed or corrupt copy cleans o
       removeNewFile: async (relative) => { const target = paths.get(relative); if (target && existsSync(target)) unlinkSync(target); } };
     const imported = await copyOfficialQr(pathToFileURL(source).href, 'synthetic-shop', 'fps', asset('synthetic-shop').id, io);
     assert.deepEqual(readFileSync(paths.get(imported.relativePath)), bytes);
+    for (const [kind, suffix] of [['alipayhk', '2'], ['wechat_pay_hk', '3']]) {
+      const photo = await copyOfficialQr(pathToFileURL(source).href, 'synthetic-shop', kind, asset('synthetic-shop', suffix).id, io);
+      assert.equal(photo.kind, kind);
+      assert.equal(photo.sha256, imported.sha256);
+      assert.deepEqual(readFileSync(paths.get(photo.relativePath)), bytes);
+    }
     await assert.rejects(copyOfficialQr(pathToFileURL(source).href, 'synthetic-shop', 'fps', imported.id, io));
     assert.deepEqual(readFileSync(paths.get(imported.relativePath)), bytes);
     const corrupt = { ...io, copy: async (uri, relative) => { const targetUri = await io.copy(uri, relative); writeFileSync(fileURLToPath(targetUri), 'synthetic corruption'); return targetUri; } };
@@ -379,4 +386,66 @@ for (const [kind, otherKind] of [['alipayhk', 'wechat_pay_hk'], ['wechat_pay_hk'
       assert.throws(() => db.prepare('DELETE FROM order_payment_snapshots WHERE order_id=?').run(id), /snapshot is locked/);
     } finally { db.close(); }
   });
+
+  test(`${kind}: explicit create/edit selections use only the order snapshot for eligible PNGs`, async () => {
+    const { store, db, health } = await setup();
+    try {
+      await store.saveShop('Synthetic Shop', '');
+      const shop = await store.getShop();
+      const qr = asset(shop.id, '1', kind);
+      const otherQr = asset(shop.id, '2', otherKind);
+      await store.registerPaymentAsset(qr);
+      await store.registerPaymentAsset(otherQr);
+      const rawName = ' WeChat Pay HK 微信支付香港 '.repeat(4);
+      const unconfirmed = await method(store, kind, { ...emptyPayment(), accountName: rawName, qrAssetId: qr.id });
+      const { id } = await create(store, snapshotOf(unconfirmed));
+      assert.deepEqual((await store.getOrder(id)).payment, snapshotOf(unconfirmed));
+      const unready = await store.getNoticeContext(id);
+      assert.throws(() => buildNotice(unready), { code: 'notice' });
+      const other = await method(store, otherKind, { ...emptyPayment(), qrAssetId: otherQr.id, confirmed: true });
+      const ready = await method(store, kind, { ...unconfirmed, confirmed: true });
+      const detail = await store.getOrder(id);
+      await store.updateOrder(id, detail.order.revision, { ...toInput(detail), payment: snapshotOf(ready) });
+      const saved = await store.getNoticeContext(id);
+      for (const template of ['editorial', 'soft']) for (const locale of ['zh-HK', 'en']) {
+        const doc = buildNotice({ ...saved, preferences: { ...saved.preferences, template, locale } });
+        const blocks = noticeTextBlocks(doc);
+        assert.equal(doc.payment.kind, kind);
+        assert.equal(doc.qr.id, qr.id);
+        assert.equal(blocks.payee, rawName);
+        assert.equal(blocks.payeeLabel, locale === 'en' ? 'Payee' : '收款人');
+        assert.match(blocks.paymentTitle, kind === 'alipayhk' ? /AlipayHK/ : /WeChat Pay HK|微信支付香港/);
+        assert.ok(blocks.qrLabel && blocks.qrReminder);
+        assert.equal(blocks.bank, undefined);
+      }
+      const prior = noticeSourceKey(buildNotice(saved));
+      await method(store, kind, { ...ready, accountName: 'Changed', qrAssetId: null });
+      assert.equal(noticeSourceKey(buildNotice(await store.getNoticeContext(id))), prior);
+      health.set(qr.id, 'missing');
+      const unavailable = await store.getNoticeContext(id);
+      assert.throws(() => buildNotice(unavailable), { code: 'notice' });
+      const edited = await store.getOrder(id);
+      await store.updateOrder(id, edited.order.revision, { ...toInput(edited), payment: snapshotOf(other) });
+      const updated = buildNotice(await store.getNoticeContext(id));
+      assert.equal(updated.qr.id, otherQr.id);
+      assert.equal(noticeTextBlocks(updated).payee, undefined);
+      assert.equal((await store.getHome()).createdCount, 1);
+    } finally { db.close(); }
+  });
 }
+
+test('payment settings and order UI expose all kinds and gate reconfirmation on persisted state', () => {
+  const list = readFileSync('app/shop/payments/index.tsx', 'utf8');
+  const route = readFileSync('app/shop/payments/[kind].tsx', 'utf8');
+  const order = readFileSync('src/ui/OrderPaymentSection.tsx', 'utf8');
+  assert.match(list, /PAYMENT_KINDS\.map/);
+  assert.match(route, /isPaymentKind\(param\) \? param : null/);
+  assert.match(order, /PAYMENT_KINDS\.flatMap/);
+  assert.match(order, /onChange\?\.\(snapshotOf\(method\)\)/);
+  assert.match(route, /\.\.\.old, \.\.\.value, confirmed: false/);
+  const save = route.slice(route.indexOf('async function save()'), route.indexOf('const header'));
+  assert.equal([...save.matchAll(/store\.savePaymentMethod/g)].length, 1);
+  assert.match(save, /await store\.savePaymentMethod[\s\S]+await store\.getPaymentSettings[\s\S]+!saved\.confirmed[\s\S]+setForm\(normalizePayment\(kind, saved\)\)[\s\S]+setNeedsReview\(true\);\s+return;/);
+  assert.match(route, /disabled=\{confirmationDisabled\}/);
+  assert.match(route, /readyToSave \? tr\("已填妥，待儲存"\)/);
+});

@@ -278,3 +278,24 @@ test('v11 backup row restore preserves new QR methods and rejects invalid logica
     }
   } finally { target.db.close(); f.db.close(); }
 });
+
+test('v11 backups preserve unfinished payment settings, a blank optional payee and an unassigned draft', async () => {
+  const f = await fixture();
+  const target = await fixture();
+  try {
+    await f.store.savePaymentMethod('alipayhk', { ...emptyPayment(), accountName: ' Synthetic ' });
+    await f.store.savePaymentMethod('wechat_pay_hk', emptyPayment());
+    const draft = await f.store.openDraft();
+    assert.equal(draft.input.payment, null);
+    const data = await readBackupData(f.adapter);
+    assert.equal(validateData(data).media, 0);
+    await target.store.maintenance(db => replaceData(db, data, randomUUID(), randomUUID(), DATE));
+    const restored = await target.store.getPaymentSettings();
+    assert.deepEqual(restored.methods.map(({ kind, status, accountName }) => ({ kind, status, accountName })), [
+      { kind: 'alipayhk', status: 'incomplete', accountName: ' Synthetic ' },
+      { kind: 'wechat_pay_hk', status: 'not_configured', accountName: '' },
+    ]);
+    assert.equal(restored.defaultMethodId, null);
+    assert.equal((await target.store.openDraft()).input.payment, null);
+  } finally { target.db.close(); f.db.close(); }
+});

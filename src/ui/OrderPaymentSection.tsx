@@ -7,7 +7,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useApp } from '../AppProvider';
 import { errorMessage } from '../domain/model';
-import { hasOptionalPayee, paymentName, paymentStatusText, paymentSummary, snapshotOf } from '../domain/payment';
+import { PAYMENT_KINDS, hasOptionalPayee, paymentName, paymentStatusText, paymentSummary, snapshotOf } from '../domain/payment';
 import type { PaymentChoice, PaymentSettings, PaymentSnapshot } from '../domain/payment';
 import { ErrorNotice, color, s } from './common';
 import { SectionHeading, TextAction, e } from './editorial';
@@ -28,27 +28,31 @@ export function OrderPaymentSection({ value, onChange, readOnly = false, disable
       .catch((cause: unknown) => { if (active) setError(errorMessage(cause)); });
     return () => { active = false; };
   }, [store, value, readOnly, retry]);
-  // Keep the existing picker options until the new methods have their settings UI.
-  const selectableMethods = settings?.methods.filter(method => !hasOptionalPayee(method.kind));
+  const selectableMethods = PAYMENT_KINDS.flatMap((kind) => settings?.methods.find((method) => method.kind === kind) ?? []);
+  const optionalPayee = value != null && hasOptionalPayee(value.kind);
   const summaryText = value ? paymentSummary(value) : '';
   const hasPaymentText = value && (
     (value.kind === 'bank' && !!(value.bankName || value.accountName || value.accountNumber)) ||
     (value.kind === 'fps' && !!value.fpsValue) ||
-    (hasOptionalPayee(value.kind) && !!value.accountName.trim())
+    (optionalPayee && !!value.accountName.trim())
   );
   const currentChoice = value && choice?.snapshot.methodId === value.methodId && choice.snapshot.revision === value.revision && choice.snapshot.qrAssetId === value.qrAssetId ? choice : null;
   return <View style={{ gap: 8 }}><SectionHeading title={readOnly ? tr("收款資料快照") : tr("本次收款方式")} icon="wallet-outline" />
     {!!error && <ErrorNotice message={trMessage(error)} retry={() => setRetry((v) => v + 1)} />}
     {readOnly ? <View style={[e.surface, e.inset]}>
       <Text style={e.fieldLabel}>{value ? tr(paymentName[value.kind]) : tr("未指定收款方式")}</Text>
-      {value && <><Text style={e.body}>{hasPaymentText ? summaryText : tr(summaryText)}</Text><Text style={e.caption}>{tr`保留儲存當時的資料；店舖設定不會回寫此訂單。`}</Text></>}
+      {value && <>
+        <Text style={e.body}>{hasPaymentText ? summaryText : tr(summaryText)}</Text>
+        {optionalPayee && <Text style={e.caption}>{currentChoice ? tr(paymentStatusText[currentChoice.status]) : !error && tr("正在檢查")}</Text>}
+        <Text style={e.caption}>{tr`保留儲存當時的資料；店舖設定不會回寫此訂單。`}</Text>
+      </>}
     </View> : <Pressable accessibilityRole="button" accessibilityLabel={tr("選擇本次單一收款方式")} disabled={disabled} onPress={() => setOpen(true)}
       style={({ pressed }) => [e.surface, e.inset, e.row, (pressed || disabled) && e.pressed]}>
-      <View style={{ flex: 1, gap: 3 }}><Text style={e.fieldLabel}>{value ? tr(paymentName[value.kind]) : tr("暫不指定")}</Text>
+      <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={e.fieldLabel}>{value ? tr(paymentName[value.kind]) : tr("暫不指定")}</Text>
         <Text style={e.caption}>{value ? tr`${currentChoice ? tr(paymentStatusText[currentChoice.status]) : tr("正在檢查")} · 保留已選資料` : tr("仍可儲存真實訂單，之後按權限補選。")}</Text></View>
       <Ionicons name="chevron-down" size={17} color={color.muted} />
     </Pressable>}
-    {value && currentChoice?.asset && <PaymentQr key={currentChoice.asset.id} asset={currentChoice.asset} state={currentChoice.qrState} compact onInvalid={() => setChoice((old) => old && old.asset?.id === currentChoice.asset?.id ? { ...old, qrState: 'invalid', status: 'incomplete' } : old)} />}
+    {value && currentChoice?.asset && <PaymentQr key={currentChoice.asset.id} asset={currentChoice.asset} state={currentChoice.qrState} compact={!readOnly || !optionalPayee} onInvalid={() => setChoice((old) => old && old.asset?.id === currentChoice.asset?.id ? { ...old, qrState: 'invalid', status: 'incomplete' } : old)} />}
     {value?.qrAssetId && currentChoice && !currentChoice.asset && <Text style={e.error}>{tr`找不到當時圖片，不會自動換成店舖最新圖片。`}</Text>}
     {!readOnly && value && currentChoice && currentChoice.status !== 'ready' && <Text style={e.caption}>{tr`收款資料未完成或圖片缺失，不影響普通訂單儲存；不代表可正式發出付款通知。`}</Text>}
     <Modal visible={open} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setOpen(false)}>
@@ -59,16 +63,17 @@ export function OrderPaymentSection({ value, onChange, readOnly = false, disable
           <Pressable accessibilityRole="radio" accessibilityState={{ checked: !value }} onPress={() => { onChange?.(null); setOpen(false); }} style={[e.inset, e.row]}>
             <Text style={[e.body, { flex: 1 }]}>{tr`暫不指定`}</Text><Ionicons name={!value ? 'checkmark-circle' : 'ellipse-outline'} size={22} color={color.ink} />
           </Pressable>
-          {selectableMethods?.map((method) => <View key={method.methodId}><View style={[e.divider, { marginHorizontal: 14 }]} />
+          {selectableMethods.map((method) => <View key={method.methodId}><View style={[e.divider, { marginHorizontal: 14 }]} />
             <Pressable accessibilityRole="radio" accessibilityState={{ checked: value?.methodId === method.methodId && value.revision === method.revision }}
               onPress={() => { onChange?.(snapshotOf(method)); setOpen(false); }} style={({ pressed }) => [e.inset, e.row, pressed && e.pressed]}>
-              <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={e.fieldLabel}>{tr(paymentName[method.kind])}{settings?.defaultMethodId === method.methodId ? tr(" · 店舖預設") : ''}</Text>
+              <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={e.fieldLabel}>{tr(paymentName[method.kind])}{settings?.defaultMethodId === method.methodId
+                ? method.status === 'ready' ? tr(" · 店舖預設") : tr(" · 預設暫停") : ''}</Text>
                 <Text style={e.caption}>{tr(paymentStatusText[method.status])}{value?.methodId === method.methodId && value.revision !== method.revision ? tr(" · 點選將明確套用最新資料") : ''}</Text></View>
               <Ionicons name={value?.methodId === method.methodId && value.revision === method.revision ? 'checkmark-circle' : 'ellipse-outline'} size={22} color={color.ink} />
             </Pressable>
           </View>)}
         </View>
-        {selectableMethods?.length === 0 && <Text style={e.caption}>{tr`尚未儲存收款設定。你可以先建立訂單，或到店舖補齊資料。`}</Text>}
+        {settings && selectableMethods.length === 0 && <Text style={e.caption}>{tr`尚未儲存收款設定。你可以先建立訂單，或到店舖補齊資料。`}</Text>}
         <TextAction title={tr("管理店舖收款資料")} icon="create-outline" onPress={() => { setOpen(false); router.push('/shop/payments'); }} />
       </ScrollView></SafeAreaView>
     </Modal>

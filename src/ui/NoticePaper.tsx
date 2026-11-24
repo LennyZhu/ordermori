@@ -26,7 +26,7 @@ export const NoticePaper = memo(function NoticePaper({ document: d, width, obser
   const quantity = { width: gap(24), textAlign: 'right' as const, fontVariant: ['tabular-nums'] as const };
   const unit = { width: gap(66), textAlign: 'right' as const, fontVariant: ['tabular-nums'] as const };
   const amount = { width: gap(76), textAlign: 'right' as const, fontVariant: ['tabular-nums'] as const };
-  const hasText = !!(b.paymentValue || b.bank); const squareQr = d.qr && d.qr.width / d.qr.height >= 0.8 && d.qr.width / d.qr.height <= 1.25;
+  const hasText = !!(b.paymentValue || b.bank || b.payee); const squareQr = d.qr && d.qr.width / d.qr.height >= 0.8 && d.qr.width / d.qr.height <= 1.25;
   const qrWidth = d.qr ? Math.min(gap(squareQr ? 145 : 280), gap(330) * d.qr.width / d.qr.height) : 0;
   const moneyRow = (label: string, value: string) => <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: gap(12) }}>
     <Copy id={label} style={{ color: muted, flex: 1 }} /><Copy id={value} style={{ fontVariant: ['tabular-nums'], textAlign: 'right', flexShrink: 1 }} />
@@ -83,6 +83,7 @@ export const NoticePaper = memo(function NoticePaper({ document: d, width, obser
           {hasText && <View style={{ gap: gap(5) }}>
           {b.paymentValue && <><Copy id="paymentLabel" size={10.5} style={{ color: muted }} /><Copy id="paymentValue" size={13} /></>}
           {b.bank && <>{['bank', 'payee', 'account'].map((key) => <View key={key} style={{ gap: gap(2) }}><Copy id={`${key}Label`} size={10.5} style={{ color: muted }} /><Copy id={key} size={13} /></View>)}</>}
+          {!b.bank && b.payee && <><Copy id="payeeLabel" size={10.5} style={{ color: muted }} /><Copy id="payee" size={13} /></>}
           </View>}
         </View>
         {d.qr && <View style={{ ...(english ? { width: qrWidth + gap(16) + StyleSheet.hairlineWidth * 2 } : {}), alignItems: 'center', padding: gap(8), backgroundColor: '#FFFFFF', borderWidth: StyleSheet.hairlineWidth, borderColor: line, borderRadius: gap(6) }}>

@@ -25,7 +25,7 @@ export interface PaymentAsset {
 }
 export interface PaymentSettings { methods: PaymentMethod[]; defaultMethodId: string | null }
 export interface PaymentChoice { snapshot: PaymentSnapshot; asset: PaymentAsset | null; qrState: QrState; status: PaymentState }
-export const paymentName: Record<PaymentKind, string> = { fps: 'FPS 轉數快', payme: 'PayMe', alipayhk: 'AlipayHK', wechat_pay_hk: 'WeChat Pay HK', bank: '銀行轉帳' };
+export const paymentName: Record<PaymentKind, string> = { fps: 'FPS 轉數快', payme: 'PayMe', alipayhk: 'AlipayHK 支付寶香港', wechat_pay_hk: 'WeChat Pay HK 微信支付香港', bank: '銀行轉帳' };
 export const paymentStatusText: Record<PaymentState, string> = { not_configured: '未設定', incomplete: '未完成', ready: '已設定' };
 export function emptyPayment(): PaymentInput {
   return { fpsType: 'id', fpsValue: '', bankName: '', accountName: '', accountNumber: '', qrAssetId: null, confirmed: false };

@@ -76,7 +76,7 @@ export default function ShopScreen() {
         <View style={{ gap: 8 }}><SectionHeading title={tr("收款資料")} />
           <Pressable accessibilityRole="button" accessibilityLabel={tr("管理收款方式及官方二維碼")} onPress={() => router.push('/shop/payments')}
             style={({ pressed }) => [e.surface, e.inset, e.row, pressed && e.pressed]}>
-            <Ionicons name="wallet-outline" size={21} color={color.ink} /><View style={{ flex: 1, gap: 3 }}><Text style={e.fieldLabel}>{tr`收款方式與官方二維碼`}</Text><Text style={e.caption}>{tr`FPS、PayMe 及銀行轉帳`}</Text></View><Ionicons name="chevron-forward" size={16} color={color.muted} />
+            <Ionicons name="wallet-outline" size={21} color={color.ink} /><View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={e.fieldLabel}>{tr`收款方式與官方二維碼`}</Text><Text style={e.caption}>{tr`FPS、PayMe、AlipayHK、WeChat Pay HK 及銀行轉帳`}</Text></View><Ionicons name="chevron-forward" size={16} color={color.muted} />
           </Pressable>
         </View>
         <View style={{ gap: 8 }}><SectionHeading title={tr("常用商品")} />

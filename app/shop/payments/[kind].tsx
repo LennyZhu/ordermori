@@ -7,7 +7,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useApp } from '../../../src/AppProvider';
 import { errorMessage } from '../../../src/domain/model';
 import { emptyPayment, hasOptionalPayee, isPaymentKind, normalizePayment, paymentIssues, paymentName, paymentStatus, paymentStatusText } from '../../../src/domain/payment';
-import type { PaymentAsset, PaymentInput, QrState } from '../../../src/domain/payment';
+import type { PaymentAsset, PaymentInput, PaymentMethod, QrState } from '../../../src/domain/payment';
 import { chooseOfficialQr } from '../../../src/data/paymentFiles';
 import { ErrorNotice, Loading, color, s } from '../../../src/ui/common';
 import { ActionButton, CompactField, SectionHeading, TextAction, e } from '../../../src/ui/editorial';
@@ -17,19 +17,22 @@ import { usePaymentKeyboard } from '../../../src/ui/usePaymentKeyboard';
 export default function PaymentEditScreen() {
   useLanguage();
   const { kind: param } = useLocalSearchParams<{ kind: string }>(); const router = useRouter(); const { store } = useApp();
-  const kind = isPaymentKind(param) && !hasOptionalPayee(param) ? param : null;
+  const kind = isPaymentKind(param) ? param : null;
+  const optionalPayee = kind !== null && hasOptionalPayee(kind);
   const [form, setForm] = useState<PaymentInput>(emptyPayment); const [asset, setAsset] = useState<PaymentAsset | null>(null);
   const [qrState, setQrState] = useState<QrState>('none'); const [loaded, setLoaded] = useState(false);
   const [dirty, setDirty] = useState(false); const [error, setError] = useState(''); const [retry, setRetry] = useState(0);
   const [busy, setBusy] = useState(false); const lock = useRef(false); const alive = useRef(true);
-  const revision = useRef<number | null>(null); const shopId = useRef(''); const { scroll, frame, insets, keyboardVisible, keyboardOffset, measureFrame, field, scrollProps } = usePaymentKeyboard();
+  const [needsReview, setNeedsReview] = useState(false);
+  const [persisted, setPersisted] = useState<PaymentMethod | null>(null);
+  const shopId = useRef(''); const { scroll, frame, insets, keyboardVisible, keyboardOffset, measureFrame, field, scrollProps } = usePaymentKeyboard();
   useEffect(() => {
     alive.current = true; let active = true;
     if (kind) Promise.all([store.getPaymentSettings(), store.getShop()]).then(async ([settings, shop]) => {
       const method = settings.methods.find((entry) => entry.kind === kind);
       const choice = method ? await store.inspectPayment(method) : null;
       if (active) {
-        shopId.current = shop.id; revision.current = method?.revision ?? null;
+        shopId.current = shop.id; setPersisted(method ?? null);
         setForm(method ? normalizePayment(kind, method) : emptyPayment()); setAsset(choice?.asset ?? null); setQrState(choice?.qrState ?? 'none'); setLoaded(true); setError('');
       }
     }).catch((cause: unknown) => { if (active) setError(errorMessage(cause)); });
@@ -41,7 +44,9 @@ export default function PaymentEditScreen() {
     if (!dirty) { back(); return; }
     Alert.alert(tr("離開未儲存的設定？"), tr("原有收款設定及訂單快照不會改變。"), [{ text: tr("繼續編輯"), style: 'cancel' }, { text: tr("捨棄修改"), style: 'destructive', onPress: back }]);
   }
-  function change(value: Partial<PaymentInput>) { setForm((old) => ({ ...old, ...value, confirmed: false })); setDirty(true); setError(''); }
+  const needsSaveBeforeReview = optionalPayee && persisted?.confirmed === true &&
+    (persisted.accountName !== form.accountName || persisted.qrAssetId !== form.qrAssetId);
+  function change(value: Partial<PaymentInput>) { setForm((old) => ({ ...old, ...value, confirmed: false })); setNeedsReview(false); setDirty(true); setError(''); }
   async function importQr() {
     if (!kind || kind === 'bank' || lock.current) return;
     lock.current = true; setBusy(true); setError(''); Keyboard.dismiss();
@@ -54,7 +59,9 @@ export default function PaymentEditScreen() {
     finally { lock.current = false; if (alive.current) setBusy(false); }
   }
   function choose() {
-    Alert.alert(tr("匯入官方收款圖片"), tr("請選擇從官方支付工具取得、屬於本店的原圖。匯入圖片不代表 App 已驗證付款碼。"),
+    Alert.alert(tr("匯入官方收款圖片"), optionalPayee
+      ? tr("請使用相應支付服務或其授權服務商提供、適合本店收款用途的收款碼。切勿上載付款碼。")
+      : tr("請選擇從官方支付工具取得、屬於本店的原圖。匯入圖片不代表 App 已驗證付款碼。"),
       [{ text: tr("取消"), style: 'cancel' }, { text: tr("選擇官方原圖"), onPress: () => { void importQr(); } }]);
   }
   function remove() {
@@ -65,8 +72,39 @@ export default function PaymentEditScreen() {
   async function save() {
     if (!kind || lock.current || !loaded) return;
     lock.current = true; setBusy(true); setError(''); Keyboard.dismiss();
-    try { await store.savePaymentMethod(kind, form, revision.current); setDirty(false); back(); }
-    catch (cause) { if (alive.current) setError(errorMessage(cause)); }
+    let written = false;
+    try {
+      await store.savePaymentMethod(kind, form, persisted?.revision ?? null);
+      written = true;
+      if (!alive.current) return;
+      if (optionalPayee) {
+        const settings = await store.getPaymentSettings();
+        const saved = settings.methods.find((method) => method.kind === kind);
+        if (!saved) throw new Error('Saved payment settings unavailable');
+        if (!alive.current) return;
+        if (!saved.confirmed && (needsSaveBeforeReview || needsReview || form.confirmed) && saved.qrState === 'available') {
+          const choice = await store.inspectPayment(saved);
+          if (!alive.current) return;
+          setPersisted(saved);
+          setForm(normalizePayment(kind, saved));
+          setAsset(choice.asset);
+          setQrState(choice.qrState);
+          setDirty(false);
+          setNeedsReview(true);
+          return;
+        }
+      }
+      setDirty(false);
+      back();
+    }
+    catch (cause) {
+      if (!alive.current) return;
+      if (written) {
+        setDirty(false);
+        setLoaded(false);
+        setError('資料已儲存，但未能讀回確認狀態。請重新讀取。');
+      } else setError(errorMessage(cause));
+    }
     finally { lock.current = false; if (alive.current) setBusy(false); }
   }
   const header = <Stack.Screen options={{ title: kind ? tr(paymentName[kind]) : tr("收款設定"), gestureEnabled: !dirty && !busy,
@@ -75,11 +113,19 @@ export default function PaymentEditScreen() {
   if (!kind) return <>{header}<View style={e.content}><ErrorNotice message={tr("找不到此收款方式。")} /></View></>;
   if (!loaded) return <>{header}{error ? <View style={e.content}><ErrorNotice message={trMessage(error)} retry={() => setRetry((v) => v + 1)} /></View> : <Loading />}</>;
   const status = paymentStatus(kind, form, qrState);
+  const readyToSave = optionalPayee && dirty && status === 'ready';
+  const confirmationDisabled = busy || (optionalPayee && (needsSaveBeforeReview || qrState !== 'available'));
   return <>{header}<View ref={frame} style={s.page} onLayout={measureFrame}>
     <KeyboardAvoidingView style={[s.page, { paddingLeft: insets.left, paddingRight: insets.right }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={keyboardOffset}>
       <ScrollView ref={scroll} {...scrollProps} contentContainerStyle={e.content}>
-        <View style={[e.rowWrap, { justifyContent: 'space-between' }]}><Text style={e.caption}>{tr`只儲存在這部裝置`}</Text><Text style={[e.fieldLabel, { color: status === 'ready' ? color.green : color.muted }]}>{tr(paymentStatusText[status])}</Text></View>
+        <View style={[e.rowWrap, { justifyContent: 'space-between' }]}><Text style={e.caption}>{tr`只儲存在這部裝置`}</Text>
+          <Text style={[e.fieldLabel, { color: status === 'ready' && !readyToSave ? color.green : color.muted }]}>
+            {readyToSave ? tr("已填妥，待儲存") : tr(paymentStatusText[status])}
+          </Text>
+        </View>
         {!!error && <ErrorNotice message={trMessage(error)} />}
+        {optionalPayee && <CompactField {...field('accountName')} label={tr("收款人名稱（選填）")} value={form.accountName} editable={!busy} autoCorrect={false}
+          onChangeText={(accountName) => change({ accountName })} />}
         {kind === 'fps' && <View style={{ gap: 12 }}><SectionHeading title={tr("收款標識（選填一種）")} />
           <View style={[e.rowWrap, { gap: 6 }]}>{(['id', 'phone', 'email'] as const).map((value) => <Pressable key={value} accessibilityRole="radio" accessibilityState={{ checked: form.fpsType === value, disabled: busy }} disabled={busy}
             onPress={() => { if (value !== form.fpsType) change({ fpsType: value, fpsValue: '' }); }} style={({ pressed }) => [{ paddingHorizontal: 14, paddingVertical: 11, minHeight: 44, borderRadius: 9, backgroundColor: form.fpsType === value ? color.ink : color.surface }, pressed && e.pressed]}>
@@ -103,8 +149,11 @@ export default function PaymentEditScreen() {
           {busy && <Text accessibilityLiveRegion="polite" style={e.caption}>{tr`正在處理，請稍候…`}</Text>}
           <Text style={e.caption}>{tr`PNG / JPEG · 最多 20 MB、4,000 萬像素 · 不裁剪或壓縮。${kind === 'payme' ? tr("PayMe 只採用官方收款碼。") : ''}`}</Text>
         </View>}
-        <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: form.confirmed, disabled: busy }} disabled={busy}
-          onPress={() => { setForm((old) => ({ ...old, confirmed: !old.confirmed })); setDirty(true); }} style={({ pressed }) => [e.row, { alignItems: 'flex-start', minHeight: 44, paddingVertical: 8 }, pressed && e.pressed]}>
+        {needsSaveBeforeReview || needsReview ? <Text accessibilityLiveRegion="polite" style={e.caption}>
+          {needsSaveBeforeReview ? tr("請先儲存變更，再核對並確認新的收款資料。") : tr("變更已儲存。請核對新資料，勾選商家確認後再儲存。")}
+        </Text> : null}
+        <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: form.confirmed, disabled: confirmationDisabled }} disabled={confirmationDisabled}
+          onPress={() => { setForm((old) => ({ ...old, confirmed: !old.confirmed })); setDirty(true); }} style={({ pressed }) => [e.row, { alignItems: 'flex-start', minHeight: 44, paddingVertical: 8 }, (pressed || confirmationDisabled) && e.pressed]}>
           <Ionicons name={form.confirmed ? 'checkbox' : 'square-outline'} size={23} color={color.ink} />
           <Text style={[e.body, { flex: 1 }]}>{kind === 'bank' ? tr("我已核對銀行、收款人及帳號屬於本店。") : tr("我已核對官方來源及收款對象；文字與圖片如同時提供，均屬於同一帳戶。")}</Text>
         </Pressable>

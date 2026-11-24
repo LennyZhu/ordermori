@@ -11,7 +11,7 @@ const zh = {
   reminder:'付款後請通知商家核對。', legal:'僅供付款通知，並非正式收據或已收款確認。App 不驗證到帳。',
   discountLabel:'固定折扣', deliveryLabel:'商家收取運費', noteLabel:'給客人的備註',
   fpsId:'FPS ID', fpsPhone:'已關聯 FPS 的電話', fpsEmail:'已關聯 FPS 的電郵',
-  bankLabel:'銀行', payeeLabel:'收款人', accountLabel:'銀行帳號', qrLabel:'商家提供的官方收款圖片',
+  bankLabel:'銀行', payeeLabel:'收款人', accountLabel:'銀行帳號', qrPayeeLabel:'收款人', qrLabel:'商家提供的官方收款圖片',
   qrReminder:'收款碼可能包含固定金額，請核對收款對象及本單金額是否適用。',
 };
 const en: Record<keyof typeof zh,string> = {
@@ -22,7 +22,7 @@ const en: Record<keyof typeof zh,string> = {
   reminder:'After payment, notify the shop so they can check it.', legal:'Payment notice only. Not a receipt or confirmation of payment. The app does not verify receipt of funds.',
   discountLabel:'Discount', deliveryLabel:'Shipping', noteLabel:'Note for the customer',
   fpsId:'FPS ID', fpsPhone:'Phone linked to FPS', fpsEmail:'Email linked to FPS',
-  bankLabel:'Bank', payeeLabel:'Account holder', accountLabel:'Account number', qrLabel:'Official payment image supplied by the shop',
+  bankLabel:'Bank', payeeLabel:'Account holder', accountLabel:'Account number', qrPayeeLabel:'Payee', qrLabel:'Official payment image supplied by the shop',
   qrReminder:'This code may include a fixed amount. Check the recipient and whether the code applies to this order’s total.',
 };
 export const noticeCopy = { 'zh-HK':zh, en };
