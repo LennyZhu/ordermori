@@ -2,7 +2,7 @@ import { isNoticeLocale } from '../domain/noticeCopy.ts';
 import { MIGRATIONS, SCHEMA_VERSION } from './migrations.ts';
 import { normalizeProduct } from '../domain/catalog.ts';
 import type { CatalogProduct, ProductInput } from '../domain/catalog.ts';
-import { DomainError, blankInput, countChars, editable, evaluate, transition } from '../domain/model.ts';
+import { DomainError, blankInput, countChars, editable, evaluate, financialProtectionMessage, financialState, transition } from '../domain/model.ts';
 import { freeEntitlements } from '../domain/pro.ts';
 import type { EntitlementAccess } from '../domain/pro.ts';
 import { freeOrderPermission } from '../domain/quota.ts';
@@ -264,7 +264,7 @@ export class OrderStore {
     const row = await this.db.first<{ payload: string }>('SELECT payload FROM order_payment_snapshots WHERE order_id=? AND shop_id=?', [id, order.shop_id]);
     const payment = row ? JSON.parse(row.payload) as PaymentSnapshot : null;
     const preferences = await this.db.first<{ template: NoticePreferences['template']; locale: 'zh-HK'; output_locale?: NoticePreferences['locale']; include_note: number; note_snapshot: string; revision: number; hide_branding?: number }>('SELECT * FROM notice_preferences WHERE order_id=? AND shop_id=?', [id, order.shop_id]);
-    return { ...(this.entitlements.current().unlimited ? { canRemoveBranding: true } : {}), detail: { order, payment, items: await this.db.all<OrderItem>('SELECT * FROM order_items WHERE order_id=? AND shop_id=? ORDER BY position', [id, order.shop_id]), history: [] },
+    return { ...(this.entitlements.current().unlimited ? { canRemoveBranding: true } : {}), detail: { order, payment, items: await this.db.all<OrderItem>('SELECT * FROM order_items WHERE order_id=? AND shop_id=? ORDER BY position', [id, order.shop_id]), history: [], financialState: await this.orderFinancialState(order) },
       payment: payment ? await this.paymentChoice(payment) : null,
       preferences: preferences ? { template: preferences.template, locale: preferences.output_locale ?? preferences.locale, includeNote: !!preferences.include_note, noteSnapshot: preferences.note_snapshot, revision: preferences.revision, ...(preferences.hide_branding === 1 ? { removeBranding: true } : {}) } : defaultNoticePreferences() };
   }
@@ -283,7 +283,8 @@ export class OrderStore {
         stage = 'settings-read';
         const context = await this.noticeContext(id);
         if (context.detail.order.revision !== orderRevision || context.preferences.revision !== expected) throw new DomainError('conflict', '訂單或通知設定已更新，請重新開啟。');
-        if (!editable(context.detail.order)) throw new DomainError('locked', '對外快照已鎖定，不能改寫通知設定。');
+        if (context.detail.financialState === 'inconsistent') throw new DomainError('locked', financialProtectionMessage);
+        if (!editable(context.detail.order, context.detail.financialState)) throw new DomainError('locked', '對外快照已鎖定，不能改寫通知設定。');
         if (!NOTICE_TEMPLATES.includes(input.template) || !isNoticeLocale(input.locale ?? context.preferences.locale) || typeof input.includeNote !== 'boolean') throw new DomainError('notice', '通知設定無效。');
         if (input.confirmedNote !== undefined && (!input.includeNote || input.confirmedNote !== context.detail.order.note)) throw new DomainError('conflict', '備註已改變，請重新核對是否提供給客人。');
         if (input.includeNote && !context.preferences.includeNote && input.confirmedNote === undefined) throw new DomainError('notice', '請先明確確認客戶可見備註。');
@@ -309,7 +310,9 @@ export class OrderStore {
     return this.enqueue(async () => {
       await this.atomic(async () => {
         const order = await this.ownedOrder(id); const shop = await this.db.first<Shop>('SELECT * FROM shops WHERE id=?', [order.shop_id]);
-        if (!editable(order) || order.revision !== expected || order.shop_name_snapshot.trim()) throw new DomainError('locked', '只可明確補齊仍可編輯、且缺少名稱的訂單；原有快照未變更。');
+        const protection = await this.orderFinancialState(order);
+        if (protection === 'inconsistent') throw new DomainError('locked', financialProtectionMessage);
+        if (!editable(order, protection) || order.revision !== expected || order.shop_name_snapshot.trim()) throw new DomainError('locked', '只可明確補齊仍可編輯、且缺少名稱的訂單；原有快照未變更。');
         if (!shop?.name.trim()) throw new DomainError('notice', '請先到我的店舖儲存名稱。');
         if (shop.name !== confirmed.name || shop.description !== confirmed.description) throw new DomainError('conflict', '店舖資料已改變，請重新核對後再補齊快照。');
         await this.db.run('UPDATE orders SET shop_name_snapshot=?,shop_description_snapshot=?,updated_at=?,revision=revision+1 WHERE id=?', [shop.name, shop.description, this.now(), id]);
@@ -453,12 +456,19 @@ export class OrderStore {
     if (!order) throw new DomainError('missing', '找不到此訂單，未變更任何資料。');
     return order;
   }
+  private async orderFinancialState(order: Order) {
+    const history = await this.db.all<History>("SELECT * FROM status_history WHERE order_id=? AND shop_id=? AND axis='payment' ORDER BY rowid", [order.id, order.shop_id]);
+    return financialState(order, history);
+  }
   async getOrder(id: string): Promise<OrderDetail> {
     return this.enqueue(async () => {
       const order = await this.ownedOrder(id);
       const payment = await this.db.first<{ payload: string }>('SELECT payload FROM order_payment_snapshots WHERE order_id=? AND shop_id=?', [id, order.shop_id]);
+      const history = await this.db.all<History>('SELECT * FROM status_history WHERE order_id=? AND shop_id=? ORDER BY rowid', [id, order.shop_id]);
+      const protection = financialState(order, history.filter(event => event.axis === 'payment'));
+      history.sort((a, b) => a.recorded_at < b.recorded_at ? -1 : a.recorded_at > b.recorded_at ? 1 : 0);
       return { order, payment: payment ? JSON.parse(payment.payload) as PaymentSnapshot : null, items: await this.db.all<OrderItem>('SELECT * FROM order_items WHERE order_id=? AND shop_id=? ORDER BY position', [id, order.shop_id]),
-        history: await this.db.all<History>('SELECT * FROM status_history WHERE order_id=? AND shop_id=? ORDER BY recorded_at,rowid', [id, order.shop_id]) };
+        history, financialState: protection };
     });
   }
   async updateOrder(id: string, revision: number, input: OrderInput) {
@@ -466,7 +476,9 @@ export class OrderStore {
       await this.atomic(async () => {
         const old = await this.ownedOrder(id);
         if (old.revision !== revision) throw new DomainError('conflict', '訂單已更新，請返回詳情重新開啟。');
-        if (!editable(old)) throw new DomainError('locked', '此訂單金額及對外資料已鎖定，不能覆寫。');
+        const protection = await this.orderFinancialState(old);
+        if (protection === 'inconsistent') throw new DomainError('locked', financialProtectionMessage);
+        if (!editable(old, protection)) throw new DomainError('locked', '此訂單金額及對外資料已鎖定，不能覆寫。');
         const v = evaluate(input);
         await this.db.run(`UPDATE orders SET buyer_identifier=?,shipping_method=?,subtotal_cents=?,discount_cents=?,shipping_cents=?,total_cents=?,note=?,updated_at=?,revision=revision+1 WHERE id=?`,
           [v.buyer, v.shippingMethod, v.subtotal, v.discount, v.shipping, v.total, v.note, this.now(), id]);
@@ -482,6 +494,7 @@ export class OrderStore {
       await this.atomic(async () => {
         const order = await this.ownedOrder(id);
         if (order.revision !== revision) throw new DomainError('conflict', '訂單已更新，請重新核對狀態。');
+        if (await this.orderFinancialState(order) === 'inconsistent') throw new DomainError('locked', financialProtectionMessage);
         const event = transition(order, action, reason, this.now()); const n = event.next;
         await this.db.run(`UPDATE orders SET order_status=?,payment_status=?,fulfillment_status=?,financial_locked_at=?,paid_at=?,refunded_at=?,refunded_amount_cents=?,fulfilled_at=?,cancelled_at=?,updated_at=?,revision=? WHERE id=?`,
           [n.order_status, n.payment_status, n.fulfillment_status, n.financial_locked_at, n.paid_at, n.refunded_at, n.refunded_amount_cents, n.fulfilled_at, n.cancelled_at, n.updated_at, n.revision, id]);

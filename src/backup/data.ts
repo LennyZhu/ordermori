@@ -4,8 +4,8 @@ import { validProductValues } from '../domain/catalog.ts';
 import { MIGRATIONS, SCHEMA_VERSION } from '../data/migrations.ts';
 import type { DatabasePort } from '../data/store.ts';
 import { OrderStore } from '../data/store.ts';
-import { evaluate, toInput } from '../domain/model.ts';
-import type { Order, OrderDetail, OrderItem } from '../domain/model.ts';
+import { evaluate, financialState, toInput } from '../domain/model.ts';
+import type { History, Order, OrderDetail, OrderItem } from '../domain/model.ts';
 import { isQrPaymentKind, normalizePayment } from '../domain/payment.ts';
 import type { PaymentSnapshot } from '../domain/payment.ts';
 import { failBackup, LIMITS } from './archive.ts';
@@ -91,6 +91,25 @@ function paymentPayload(row: Row) {
   if (p.version !== 1 || p.kind !== row.kind || p.shopId !== row.shop_id || !Number.isSafeInteger(p.revision) || p.revision < 1 || p.qrAssetId !== row.qr_asset_id || (row.id && p.methodId !== row.id) || (row.revision && p.revision !== row.revision) || (p.confirmed && !p.confirmedAt)) failBackup('備份收款快照不一致。');
   return p;
 }
+function inconsistentFinancialLock(): never {
+  return failBackup('備份訂單的付款紀錄與永久財務鎖不一致，未還原。');
+}
+
+function validateFinancialLocks(orders: Row[], history: Row[]) {
+  const ordersById = new Map(orders.map(order => [order.id, order]));
+  const evidence = new Map<Row['id'], History[]>();
+  for (const event of history) {
+    if (event.axis !== 'payment') continue;
+    if (!ordersById.has(event.order_id)) inconsistentFinancialLock();
+    const events = evidence.get(event.order_id) ?? [];
+    events.push(event as unknown as History);
+    evidence.set(event.order_id, events);
+  }
+  for (const order of orders) {
+    if (financialState(order as unknown as Order, evidence.get(order.id) ?? []) === 'inconsistent') inconsistentFinancialLock();
+  }
+}
+
 export async function readBackupData(db: DatabasePort): Promise<BackupData> {
   const integrity = await db.all<Record<string, string>>('PRAGMA integrity_check');
   if (integrity.length !== 1 || Object.values(integrity[0])[0] !== 'ok' || (await db.all('PRAGMA foreign_key_check')).length) failBackup('備份 SQLite 完整性或關聯校驗失敗。');
@@ -98,7 +117,8 @@ export async function readBackupData(db: DatabasePort): Promise<BackupData> {
   for (const table of TABLES) {
     const count = await db.first<{ n: number }>(`SELECT count(*) AS n FROM ${table}`);
     rows += count!.n; if (rows > LIMITS.rows) failBackup('備份記錄超出目前可安全還原的上限。');
-    data[table] = await db.all<Row>(`SELECT * FROM ${table}`);
+    // Preserve event insertion order when restoring, even if the clock moved backwards.
+    data[table] = await db.all<Row>(`SELECT * FROM ${table}${table === 'status_history' ? ' ORDER BY rowid' : ''}`);
     for (const row of data[table]) for (const value of Object.values(row)) {
       if (typeof value === 'number' && !Number.isSafeInteger(value)) failBackup('備份含非安全整數。');
       if (typeof value === 'string' && value.length > 500000) failBackup('備份文字資料過大。');
@@ -112,6 +132,7 @@ export function validateData(data: BackupData): BackupSummary {
   exactKeys(state, ['id','profile_id','active_shop_id','locale','created_count','order_number_seq']);
   if (state.id !== 1 || state.active_shop_id !== shop.id || typeof state.profile_id !== 'string' || !state.profile_id || data.backup_state[0].id !== 1 || (data.backup_state[0].media_generation !== '' && !/^[a-f0-9-]{36}$/.test(String(data.backup_state[0].media_generation)))) failBackup('備份檔案設定無效。');
   for (const table of TABLES) for (const row of data[table]) if ('shop_id' in row && row.shop_id !== shop.id) failBackup('備份含不一致的店舖歸屬。');
+  validateFinancialLocks(data.orders, data.status_history);
   const allocated = data.creation_ledger.map(r => Number(r.allocated_number)).sort((a,b) => a-b);
   const newSince = (sequence: number) => {
     let lo=0, hi=allocated.length;

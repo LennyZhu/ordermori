@@ -92,7 +92,7 @@ export default function NoticeScreen() {
     } catch (cause) { setError(errorMessage(cause)); }
   }
   if (!context || context.detail.order.id !== id) return error ? <View style={e.content}><ErrorNotice message={trMessage(error)} retry={() => setRetry((n) => n + 1)} /></View> : <Loading />;
-  const canEdit = editable(context.detail.order);
+  const canEdit = editable(context.detail.order, context.detail.financialState);
   const nativeReady = !!UIManager.getViewManagerConfig('RNSVGSvgView');
   const selectedTemplate = selection?.template ?? context.preferences.template;
   const selectedLocale = selection?.locale ?? context.preferences.locale;

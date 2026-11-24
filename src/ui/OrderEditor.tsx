@@ -8,7 +8,7 @@ import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { randomUUID } from 'expo-crypto';
 import { useApp } from '../AppProvider';
-import { DomainError, SHIPPING, blankInput, countChars, editable, errorMessage, evaluate, money, toInput } from '../domain/model';
+import { DomainError, SHIPPING, blankInput, countChars, editable, errorMessage, evaluate, financialProtectionMessage, money, toInput } from '../domain/model';
 import type { FormItem, OrderInput, Shipping } from '../domain/model';
 import { Button, ErrorNotice, Loading, color, s, shippingText } from './common';
 import { ActionButton, CompactField, SectionHeading, TextAction, e } from './editorial';
@@ -88,7 +88,8 @@ export function OrderEditor({ orderId }: { orderId?: string }) {
     (async () => {
       if (orderId) {
         const detail = await store.getOrder(orderId);
-        if (!editable(detail.order)) throw new DomainError('locked', '此訂單金額及對外資料已鎖定，請返回詳情。');
+        if (detail.financialState === 'inconsistent') throw new DomainError('locked', financialProtectionMessage);
+        if (!editable(detail.order, detail.financialState)) throw new DomainError('locked', '此訂單金額及對外資料已鎖定，請返回詳情。');
         if (active) { revision.current = detail.order.revision; current.current = toInput(detail); setForm(current.current); setError(''); }
       } else {
         const draft = await store.openDraft();

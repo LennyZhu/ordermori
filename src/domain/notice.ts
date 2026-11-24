@@ -1,7 +1,7 @@
 import { isNoticeLocale, noticeCopy, noticeShippingText } from './noticeCopy.ts';
 import type { NoticeLocale } from './noticeCopy.ts';
-import { DomainError, countChars, editable } from './model.ts';
-import type { Order, OrderDetail } from './model.ts';
+import { DomainError, countChars, editable, financialProtectionMessage } from './model.ts';
+import type { FinancialState, Order, OrderDetail } from './model.ts';
 import { hasOptionalPayee, paymentIssues, paymentStatus, snapshotOf } from './payment.ts';
 import type { PaymentAsset, PaymentChoice } from './payment.ts';
 export { NOTICE_LOCALES, noticeLocaleName } from './noticeCopy.ts';
@@ -28,7 +28,8 @@ export interface NoticeFileRecord {
   id: string; orderId: string; shopId: string; orderRevision: number; preferencesRevision: number;
   template: NoticeTemplate; locale?: NoticeLocale; branding?: '' | 'Made with OrderMori'; relativePath: string; width: number; height: number; bytes: number; sha256: string; dataHash: string; createdAt: string;
 }
-export function noticeStateReason(order: Order): string | null {
+export function noticeStateReason(order: Order, protection?: FinancialState): string | null {
+  if (protection === 'inconsistent') return financialProtectionMessage;
   if (order.order_status !== 'active') return '已取消訂單不能產生新的付款通知。';
   if (order.payment_status !== 'unpaid') return '已付款或已退款訂單不能產生新的付款通知；已有檔案只供歷史查看。';
   if (order.fulfillment_status !== 'pending') return '已履約訂單不能再次產生付款請求。';
@@ -36,7 +37,7 @@ export function noticeStateReason(order: Order): string | null {
 }
 export function noticeProblems(context: NoticeContext): string[] {
   const { detail, payment } = context; const problems: string[] = [];
-  const state = noticeStateReason(detail.order); if (state) problems.push(state);
+  const state = noticeStateReason(detail.order, detail.financialState); if (state) problems.push(state);
   if (!detail.order.shop_name_snapshot.trim()) problems.push('訂單尚未保存店舖名稱快照，請明確補齊後再產生。');
   if (context.preferences.includeNote && context.preferences.noteSnapshot !== detail.order.note) problems.push('訂單備註已改變，請重新確認客戶可見備註，或取消包含備註。');
   if (!detail.payment || !payment) problems.push('此訂單沒有收款快照，請修改訂單並明確選擇已確認的收款方式。');
@@ -77,7 +78,7 @@ export function buildNotice(context: NoticeContext): NoticeDocument {
 export const noticeFileBranding = (file: Pick<NoticeFileRecord, 'branding'>) => file.branding ?? 'Made with OrderMori';
 export const noticeFileLocale = (file: Pick<NoticeFileRecord,'locale'>): NoticeLocale => file.locale ?? 'zh-HK';
 export function firstNoticeLocale(context: NoticeContext, files: readonly NoticeFileRecord[], appLocale: NoticeLocale): NoticeLocale {
-  return context.preferences.revision === 0 && files.length === 0 && editable(context.detail.order) && !noticeStateReason(context.detail.order) ? appLocale : context.preferences.locale;
+  return context.preferences.revision === 0 && files.length === 0 && editable(context.detail.order, context.detail.financialState) && !noticeStateReason(context.detail.order, context.detail.financialState) ? appLocale : context.preferences.locale;
 }
 export const noticeSourceKey = (document: NoticeDocument): string => JSON.stringify(document);
 export function noticeMoney(cents: number): string {

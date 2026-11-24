@@ -12,13 +12,14 @@ import { join, dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { zipSync, strToU8 } from 'fflate';
 import { OrderStore } from '../src/data/store.ts';
-import { blankInput } from '../src/domain/model.ts';
+import { blankInput, editable, financialProtectionMessage, toInput } from '../src/domain/model.ts';
 import { emptyPayment } from '../src/domain/payment.ts';
-import { buildNotice, noticeSourceKey } from '../src/domain/notice.ts';
+import { buildNotice, noticeSourceKey, noticeStateReason } from '../src/domain/notice.ts';
 import { SCHEMA_VERSION } from '../src/data/migrations.ts';
 import { checkSchema, createSchema, migrateInspected, readBackupData, replaceData, mediaReferences, validateData, TABLES } from '../src/backup/data.ts';
 import { copyEntry, inspectArchive, LIMITS, writeArchive } from '../src/backup/archive.ts';
 import { parseManifest, verifySummary } from '../src/backup/manifest.ts';
+import { fixture as schemaFixture, order as historicalOrder } from './helpers/notice-bilingual.mjs';
 
 const port=db=>({exec:async sql=>db.exec(sql),run:async(sql,p=[])=>db.prepare(sql).run(...p),first:async(sql,p=[])=>db.prepare(sql).get(...p)??null,all:async(sql,p=[])=>db.prepare(sql).all(...p)});
 const reference=async()=>{const db=new DatabaseSync(':memory:');return {db:port(db),close:async()=>db.close()};};
@@ -109,6 +110,276 @@ test('failure after all row writes rolls back rows, media pointer, counters AND 
     assert.throws(()=>a.db.prepare('UPDATE orders SET total_cents=1 WHERE id=?').run(order.id));
     const reopened=new DatabaseSync(a.path);try{assert.equal(reopened.prepare('SELECT created_count FROM app_state').get().created_count,2);}finally{reopened.close();}
   }finally{a.cleanup();b.cleanup();}
+});
+
+const financialLockError = { code: 'backup', message: '備份訂單的付款紀錄與永久財務鎖不一致，未還原。' };
+
+test('backup financial evidence accepts real payment transitions, including repeat payments after clock rollback', async () => {
+  const f = await fixture(6);
+  try {
+    const [untouched, paid, corrected, repeated, refunded, cancelled] = f.db.prepare('SELECT id FROM orders ORDER BY order_number').all().map(row => row.id);
+    let clock = '2026-10-29T04:00:00.000Z';
+    const writer = new OrderStore(f.adapter, randomUUID, () => clock);
+    for (const id of [paid, corrected, repeated, refunded]) await writer.changeStatus(id, 1, 'mark_paid', 'Synthetic payment');
+    for (const id of [corrected, repeated]) await writer.changeStatus(id, 2, 'correct_payment', 'Synthetic correction');
+    await writer.changeStatus(refunded, 2, 'refund', 'Synthetic refund');
+    await writer.changeStatus(refunded, 3, 'cancel', 'Synthetic cancellation');
+    await writer.changeStatus(cancelled, 1, 'cancel', 'Synthetic cancellation');
+    await writer.changeStatus(paid, 2, 'fulfill', 'Synthetic handover');
+    clock = '2026-10-29T03:00:00.000Z';
+    await writer.changeStatus(repeated, 3, 'mark_paid', 'Synthetic repeated payment');
+
+    const data = await readBackupData(f.adapter);
+    const row = id => data.orders.find(order => order.id === id);
+    assert.equal(row(untouched).financial_locked_at, null);
+    assert.equal(row(cancelled).financial_locked_at, null);
+    assert.equal(row(paid).payment_status, 'paid');
+    assert.equal(row(corrected).payment_status, 'unpaid');
+    assert.equal(row(corrected).paid_at, row(corrected).financial_locked_at);
+    assert.equal(row(repeated).payment_status, 'paid');
+    assert.equal(row(repeated).paid_at, clock);
+    assert.equal(row(repeated).financial_locked_at, row(corrected).financial_locked_at);
+    assert.equal(row(refunded).payment_status, 'refunded');
+    assert.equal(row(refunded).order_status, 'cancelled');
+
+    for (const [id, patch] of [
+      [corrected, { financial_locked_at: null }],
+      [paid, { financial_locked_at: null }],
+      [corrected, { financial_locked_at: null, paid_at: null }],
+      [corrected, { paid_at: null }],
+      [untouched, { financial_locked_at: clock }],
+      [repeated, { financial_locked_at: clock }],
+      [refunded, { refunded_amount_cents: 1 }],
+      [corrected, { refunded_at: clock }],
+    ]) {
+      assert.throws(() => validateData({ ...data, orders: data.orders.map(order => order.id === id ? { ...order, ...patch } : order) }), financialLockError);
+    }
+    const invalidHistory = data.status_history.map(event => event.order_id === corrected && event.from_value === 'paid'
+      ? { ...event, to_value: 'invalid' } : event);
+    assert.throws(() => validateData({ ...data, status_history: invalidHistory }), financialLockError);
+  } finally { f.cleanup(); }
+});
+
+for (const version of [10, 11]) {
+  test(`v${version} ZIP passes file checks; inconsistent staged financial evidence cannot replace data or media`, async () => {
+    const target = await fixture(1);
+    const input = await schemaFixture(version, false, join(target.dir, 'incoming.sqlite'));
+    try {
+      const id = await historicalOrder(input);
+      const document = buildNotice(await input.store.getNoticeContext(id));
+      const pngBytes = syntheticPng(1080, 40);
+      const noticeId = randomUUID(), noticePath = `payment-notices/${noticeId}.png`;
+      const sourceKey = noticeSourceKey(document);
+      await input.store.recordNoticeFile({
+        id: noticeId, orderId: id, shopId: document.shopId, orderRevision: document.orderRevision,
+        preferencesRevision: document.preferencesRevision, template: document.template, locale: document.locale,
+        relativePath: noticePath, width: 1080, height: 40, bytes: pngBytes.length, sha256: hash(pngBytes),
+        dataHash: hash(sourceKey), createdAt: now,
+      }, sourceKey);
+      await input.store.changeStatus(id, 1, 'mark_paid', 'Synthetic payment');
+      await input.store.changeStatus(id, 2, 'correct_payment', 'Synthetic correction');
+      const valid = await readBackupData(input.adapter);
+      assert.ok(valid.orders[0].financial_locked_at);
+      const summary = { ...validateData(valid), schemaVersion: version };
+      const snapshotPath = join(target.dir, 'snapshot.sqlite');
+      snapshot({ path: join(target.dir, 'incoming.sqlite') }, snapshotPath);
+      async function stage(label) {
+        const files = [['data.sqlite', readFileSync(snapshotPath)], [`media/${noticePath}`, pngBytes]];
+        const manifest = { format: 'OrderMori', version: 1, createdAt: now, schemaVersion: version, summary,
+          files: files.map(([path, bytes]) => ({ path, size: bytes.length, sha256: hash(bytes) })) };
+        const zipPath = join(target.dir, `${label}.ordermori.zip`);
+        writeFileSync(zipPath, await archive([['manifest.json', Buffer.from(JSON.stringify(manifest))], ...files]));
+        const source = byteSource(readFileSync(zipPath)), entries = await inspectArchive(source);
+        async function checkedEntry(path) {
+          const chunks = [];
+          await copyEntry(source, entries.find(entry => entry.path === path), { write: async bytes => { chunks.push(Buffer.from(bytes)); } });
+          return Buffer.concat(chunks);
+        }
+        const parsed = parseManifest((await checkedEntry('manifest.json')).toString(), entries);
+        const out = new Map();
+        for (const file of parsed.files) {
+          const bytes = await checkedEntry(file.path);
+          assert.equal(hash(bytes), file.sha256);
+          assert.equal(bytes.length, file.size);
+          out.set(file.path, bytes);
+        }
+        const stagedPath = join(target.dir, `${label}.sqlite`);
+        writeFileSync(stagedPath, out.get('data.sqlite'));
+        return { stagedPath, parsed, png: out.get(`media/${noticePath}`) };
+      }
+      const good = await stage('valid');
+      const snapshotDb = new DatabaseSync(snapshotPath);
+      try {
+        // Preserve the permanent lock while making its evidence inconsistent.
+        snapshotDb.prepare("UPDATE status_history SET recorded_at=? WHERE order_id=? AND axis='payment' AND to_value='paid'").run(now, id);
+        assert.equal(snapshotDb.prepare('SELECT financial_locked_at FROM orders WHERE id=?').get(id).financial_locked_at, valid.orders[0].financial_locked_at);
+        assert.equal(snapshotDb.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
+      } finally { snapshotDb.close(); }
+      const bad = await stage('inconsistent');
+      assert.deepEqual(bad.png, good.png);
+      const { stagedPath, parsed } = good;
+      const staged = new DatabaseSync(stagedPath);
+      try {
+        const adapter = port(staged);
+        assert.equal(await checkSchema(adapter, reference), version);
+        await migrateInspected(adapter);
+        const trusted = await readBackupData(adapter);
+        verifySummary(parsed, validateData(trusted));
+        assert.deepEqual(trusted.orders, valid.orders);
+        const generation = randomUUID();
+        const targetData = await readBackupData(target.adapter);
+        for (const ref of mediaReferences(targetData)) {
+          const dest = join(target.dir, 'restored', generation, ref.path);
+          mkdirSync(dirname(dest), { recursive: true });
+          writeFileSync(dest, target.media[ref.path]);
+        }
+        await target.store.maintenance(db => replaceData(db, targetData, generation, randomUUID(), now));
+        const before = await readBackupData(target.adapter);
+
+        // Inject a missing field into the host read result after ZIP and Schema validation.
+        const withoutLock = row => row.id === id ? { ...row, financial_locked_at: null } : row;
+        const stagedFault = { ...adapter, all: async (sql, params) => {
+          const rows = await adapter.all(sql, params);
+          return sql === 'SELECT * FROM orders' ? rows.map(withoutLock) : rows;
+        } };
+        await assert.rejects(readBackupData(stagedFault), financialLockError);
+        const inconsistent = { ...trusted, orders: trusted.orders.map(withoutLock) };
+        let began = false;
+        const targetPort = { ...target.adapter, exec: async sql => {
+          began ||= sql === 'BEGIN IMMEDIATE';
+          await target.adapter.exec(sql);
+        } };
+        const incoming = new DatabaseSync(bad.stagedPath);
+        try {
+          const incomingPort = port(incoming);
+          assert.equal(await checkSchema(incomingPort, reference), version);
+          await migrateInspected(incomingPort);
+          assert.equal(incoming.prepare('PRAGMA user_version').get().user_version, 11);
+          assert.equal(incoming.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
+          assert.deepEqual(incoming.prepare('PRAGMA foreign_key_check').all(), []);
+          await assert.rejects(async () => {
+            const data = await readBackupData(incomingPort);
+            await replaceData(targetPort, data, randomUUID(), randomUUID(), now);
+          }, financialLockError);
+          assert.equal(began, false);
+        } finally { incoming.close(); }
+        await assert.rejects(replaceData(targetPort, inconsistent, randomUUID(), randomUUID(), now), financialLockError);
+        assert.equal(began, false);
+        assert.deepEqual(await readBackupData(target.adapter), before);
+        assert.equal(before.backup_state[0].media_generation, generation);
+        for (const ref of mediaReferences(before)) assert.equal(hash(readFileSync(join(target.dir, 'restored', generation, ref.path))), ref.sha256);
+
+        const retryGeneration = randomUUID();
+        const restoredPng = join(target.dir, 'restored', retryGeneration, noticePath);
+        mkdirSync(dirname(restoredPng), { recursive: true });
+        writeFileSync(restoredPng, good.png);
+        await target.store.maintenance(db => replaceData(db, trusted, retryGeneration, randomUUID(), now));
+        const restored = await target.store.getOrder(id);
+        assert.equal(restored.order.financial_locked_at, valid.orders[0].financial_locked_at);
+        assert.deepEqual((await readBackupData(target.adapter)).order_payment_snapshots, trusted.order_payment_snapshots);
+        assert.equal((await readBackupData(target.adapter)).backup_state[0].media_generation, retryGeneration);
+        assert.equal(hash(readFileSync(restoredPng)), trusted.notice_files[0].sha256);
+        await assert.rejects(target.store.updateOrder(id, restored.order.revision, {}), { code: 'locked' });
+        assert.throws(() => target.db.prepare('DELETE FROM order_payment_snapshots WHERE order_id=?').run(id), /snapshot is locked/);
+      } finally { staged.close(); }
+    } finally { input.db.close(); target.cleanup(); }
+  });
+}
+
+test('a pre-existing inconsistent active v10 history survives upgrade and still blocks backup and restore', async () => {
+  const active = await schemaFixture(10);
+  const source = await fixture(1);
+  try {
+    const id = await historicalOrder(active);
+    await active.store.changeStatus(id, 1, 'mark_paid', 'Synthetic payment');
+    await active.store.changeStatus(id, 2, 'correct_payment', 'Synthetic correction');
+    active.db.prepare("UPDATE status_history SET recorded_at=? WHERE order_id=? AND axis='payment' AND to_value='paid'").run(now, id);
+    const before = await active.store.getOrder(id);
+    assert.ok(before.order.financial_locked_at);
+    assert.equal(active.db.prepare('PRAGMA user_version').get().user_version, 10);
+    await active.store.initialize();
+    assert.equal(active.db.prepare('PRAGMA user_version').get().user_version, 11);
+    assert.deepEqual(await active.store.getOrder(id), before);
+    await assert.rejects(readBackupData(active.adapter), financialLockError);
+    const replacement = await readBackupData(source.adapter);
+    await assert.rejects(active.store.maintenance(db => replaceData(db, replacement, randomUUID(), randomUUID(), now)), financialLockError);
+    assert.deepEqual(await active.store.getOrder(id), before);
+
+    assert.equal(editable(before.order), false);
+    await assert.rejects(active.store.updateOrder(id, before.order.revision, toInput(before)), { code: 'locked' });
+    assert.throws(() => active.db.prepare('DELETE FROM order_payment_snapshots WHERE order_id=?').run(id), /snapshot is locked/);
+    assert.equal(before.financialState, 'inconsistent');
+    await assert.rejects(active.store.changeStatus(id, before.order.revision, 'mark_paid', ''), { code: 'locked', message: financialProtectionMessage });
+    assert.deepEqual(await active.store.getOrder(id), before);
+  } finally { active.db.close(); source.cleanup(); }
+});
+
+test('active v10 rows with missing financial locks stay readable after upgrade but reject all guarded Store writes', async () => {
+  const active = await schemaFixture(10);
+  try {
+    const protectedError = { code: 'locked', message: financialProtectionMessage };
+    const stale = [], ids = [];
+    for (const keepPaidAt of [true, false]) {
+      const id = await historicalOrder(active);
+      ids.push(id);
+      stale.push(await active.store.getOrder(id));
+      // Seed legacy evidence on synthetic unpaid rows. SQLite keeps CHECKs,
+      // foreign keys and all financial lock triggers enabled throughout.
+      if (keepPaidAt) active.db.prepare('UPDATE orders SET paid_at=? WHERE id=?').run(now, id);
+      const row = stale.at(-1).order;
+      for (const [from, to] of [['unpaid', 'paid'], ['paid', 'unpaid']]) {
+        active.db.prepare("INSERT INTO status_history VALUES(?,?,?,'payment',?,?,?,?)")
+          .run(randomUUID(), id, row.shop_id, from, to, 'Synthetic legacy fixture', now);
+      }
+    }
+    assert.equal(active.db.prepare('PRAGMA foreign_keys').get().foreign_keys, 1);
+    assert.equal(active.db.prepare('PRAGMA ignore_check_constraints').get().ignore_check_constraints, 0);
+    assert.equal(active.db.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
+    assert.deepEqual(active.db.prepare('PRAGMA foreign_key_check').all(), []);
+    assert.equal(await checkSchema(active.adapter, reference), 10);
+    await assert.rejects(readBackupData(active.adapter), financialLockError);
+    active.db.exec('PRAGMA query_only=OFF');
+    const snapshot = table => active.db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all();
+    const tables = ['orders', 'order_items', 'status_history', 'order_payment_snapshots', 'notice_preferences', 'notice_files', 'payment_assets', 'backup_state'];
+    const original = tables.map(snapshot);
+    await active.store.initialize();
+    assert.equal(active.db.prepare('PRAGMA user_version').get().user_version, 11);
+    assert.deepEqual(tables.map(snapshot), original);
+    assert.equal(await checkSchema(active.adapter, reference), 11);
+    await assert.rejects(readBackupData(active.adapter), financialLockError);
+    active.db.exec('PRAGMA query_only=OFF');
+
+    for (const [index, id] of ids.entries()) {
+      const detail = await active.store.getOrder(id);
+      assert.equal(detail.order.financial_locked_at, null);
+      assert.equal(detail.order.payment_status, 'unpaid');
+      assert.equal(detail.order.paid_at, index === 0 ? now : null);
+      assert.deepEqual(detail.items, stale[index].items);
+      assert.deepEqual(detail.payment, stale[index].payment);
+      assert.deepEqual(detail.history.filter(event => event.axis === 'payment')
+        .map(event => [event.from_value, event.to_value]), [['unpaid', 'paid'], ['paid', 'unpaid']]);
+      const notice = await active.store.getNoticeContext(id);
+      assert.deepEqual(notice.detail.order, detail.order);
+      assert.equal(noticeStateReason(notice.detail.order, notice.detail.financialState), financialProtectionMessage);
+      assert.equal(editable(stale[index].order, stale[index].financialState), true);
+      const input = toInput(stale[index]);
+      await assert.rejects(active.store.updateOrder(id, stale[index].order.revision,
+        { ...input, discount: '1.00', items: input.items.map(item => ({ ...item, price: '2.00' })) }), protectedError);
+      await assert.rejects(active.store.updateOrder(id, detail.order.revision, { ...input, payment: null }), protectedError);
+      const method = (await active.store.getPaymentSettings()).methods[0];
+      await assert.rejects(active.store.updateOrder(id, detail.order.revision, { ...input, payment: method }), protectedError);
+      for (const action of ['mark_paid', 'cancel']) {
+        await assert.rejects(active.store.changeStatus(id, detail.order.revision, action, ''), protectedError);
+      }
+      await assert.rejects(active.store.saveNoticePreferences(id, detail.order.revision, 0, { template: 'soft', includeNote: false }), protectedError);
+      await assert.rejects(active.store.completeNoticeShopSnapshot(id, detail.order.revision, { name: 'New shop', description: '' }), protectedError);
+      await assert.rejects(active.store.recordNoticeFile({ orderId: id }, ''), { code: 'notice', message: financialProtectionMessage });
+      assert.equal(detail.financialState, 'inconsistent');
+      assert.equal(editable(detail.order, detail.financialState), false);
+      assert.deepEqual(await active.store.getOrder(id), detail);
+    }
+    assert.deepEqual(tables.map(snapshot), original);
+  } finally { active.db.close(); }
 });
 
 test('maintenance drains prior writes, rejects new writes and releases after failure',async()=>{

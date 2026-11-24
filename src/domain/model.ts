@@ -34,7 +34,7 @@ export interface History {
   id: string; order_id: string; shop_id: string; axis: 'order' | 'payment' | 'fulfillment';
   from_value: string; to_value: string; reason: string; recorded_at: string;
 }
-export interface OrderDetail { order: Order; items: OrderItem[]; history: History[]; payment: PaymentSnapshot | null }
+export interface OrderDetail { order: Order; items: OrderItem[]; history: History[]; payment: PaymentSnapshot | null; financialState?: FinancialState }
 export interface HomeData {
   orders: Order[]; unpaid: number; fulfillment: number; createdCount: number; hasDraft: boolean; shop: Shop;
   quota: import('./quota.ts').MonthlyQuota;
@@ -101,9 +101,39 @@ export function evaluate(input: OrderInput, strict = true) {
   if (Object.keys(fields).length) throw new DomainError('validation', '請檢查並修正標示的欄位。', fields);
   return { buyer: input.buyer.trim(), items, subtotal, discount, shipping, total, shippingMethod: input.shipping, note: input.note };
 }
-export function editable(order: Order) {
+export type FinancialState = 'never_paid' | 'locked' | 'inconsistent';
+export const financialProtectionMessage = '訂單付款紀錄與永久財務鎖不一致，只可查看資料。';
+
+// Payment events must be in insertion order. Device timestamps can tie or go backwards.
+export function financialState(
+  order: Pick<Order, 'id' | 'shop_id' | 'payment_status' | 'financial_locked_at' | 'paid_at' | 'refunded_at' | 'refunded_amount_cents' | 'total_cents'>,
+  history: readonly Pick<History, 'order_id' | 'shop_id' | 'from_value' | 'to_value' | 'recorded_at'>[],
+): FinancialState {
+  let status: Order['payment_status'] = 'unpaid';
+  let firstPaidAt: string | null = null, lastPaidAt: string | null = null, refundedAt: string | null = null;
+  for (const event of history) {
+    if (event.order_id !== order.id || event.shop_id !== order.shop_id || event.from_value !== status ||
+        typeof event.recorded_at !== 'string' || !Number.isFinite(Date.parse(event.recorded_at))) return 'inconsistent';
+    if (status === 'unpaid' && event.to_value === 'paid') {
+      firstPaidAt ??= event.recorded_at;
+      lastPaidAt = event.recorded_at;
+    } else if (status === 'paid' && event.to_value === 'refunded') {
+      refundedAt = event.recorded_at;
+    } else if (!(status === 'paid' && event.to_value === 'unpaid')) {
+      return 'inconsistent';
+    }
+    status = event.to_value;
+  }
+  if (order.payment_status !== status || order.financial_locked_at !== firstPaidAt ||
+      order.paid_at !== lastPaidAt || order.refunded_at !== refundedAt ||
+      order.refunded_amount_cents !== (status === 'refunded' ? order.total_cents : null)) return 'inconsistent';
+  return firstPaidAt === null ? 'never_paid' : 'locked';
+}
+
+export function editable(order: Order, protection?: FinancialState) {
   return order.order_status === 'active' && order.payment_status === 'unpaid'
-    && order.fulfillment_status === 'pending' && !order.financial_locked_at && !order.fulfilled_at && !order.refunded_at;
+    && order.fulfillment_status === 'pending' && !order.financial_locked_at && !order.paid_at && !order.fulfilled_at && !order.refunded_at
+    && (protection === undefined || protection === 'never_paid');
 }
 export function availableActions(order: Order): Action[] {
   if (order.order_status !== 'active') return [];

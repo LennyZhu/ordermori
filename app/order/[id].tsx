@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useApp } from '../../src/AppProvider';
-import { availableActions, editable, errorMessage, money } from '../../src/domain/model';
+import { availableActions, editable, errorMessage, financialProtectionMessage, money } from '../../src/domain/model';
 import type { Action, Order, OrderDetail } from '../../src/domain/model';
 import { Button, ErrorNotice, Loading, color, dateText, s, shippingText, statusText } from '../../src/ui/common';
 import { ActionButton, AmountRow, CompactField, OrderStates, SectionHeading, TextAction, e } from '../../src/ui/editorial';
@@ -54,7 +54,8 @@ export default function OrderDetailScreen() {
   }
   if (!data) return error ? <View style={s.content}><ErrorNotice message={trMessage(error)} retry={() => setRetry((v) => v + 1)} /><Button secondary title={tr("返回訂單")} onPress={() => router.replace('/')} /></View> : <Loading />;
   const order = data.order;
-  const actions = availableActions(order);
+  const inconsistent = data.financialState === 'inconsistent';
+  const actions = inconsistent ? [] : availableActions(order);
   const primaryAction = actions.find((action) => action === 'mark_paid' || action === 'fulfill');
   const openAction = (action: Action) => { setReason(''); setOperationError(''); setPending({ action, order }); };
   return <SafeAreaView edges={['left', 'right', 'bottom']} style={s.page}>
@@ -71,9 +72,9 @@ export default function OrderDetailScreen() {
         </View>
         <OrderStates order={order} />
         <View style={[e.rowWrap, { justifyContent: 'space-between' }]}>
-          {!!order.financial_locked_at && <View style={[e.row, { flex: 1, alignItems: 'flex-start' }]}><Ionicons name="lock-closed-outline" size={14} color={color.muted} />
-            <Text style={[e.caption, { flex: 1 }]}>{tr`曾確認付款，金額及對外資料已永久鎖定。`}</Text></View>}
-          {editable(order) && <TextAction title={tr("修改訂單")} icon="create-outline" onPress={() => router.push({ pathname: '/order/edit/[id]', params: { id } })} />}
+          {(inconsistent || order.financial_locked_at) && <View style={[e.row, { flex: 1, alignItems: 'flex-start' }]}><Ionicons name="lock-closed-outline" size={14} color={color.muted} />
+            <Text style={[e.caption, { flex: 1 }]}>{inconsistent ? tr(financialProtectionMessage) : tr("曾確認付款，金額及對外資料已永久鎖定。")}</Text></View>}
+          {editable(order, data.financialState) && <TextAction title={tr("修改訂單")} icon="create-outline" onPress={() => router.push({ pathname: '/order/edit/[id]', params: { id } })} />}
         </View>
       </View>
       <View style={e.surface}>
@@ -100,7 +101,7 @@ export default function OrderDetailScreen() {
         </View>
       </View>
       <OrderPaymentSection value={data.payment} readOnly />
-      <ActionButton title={trMessage(noticeStateReason(order) ? '歷史付款通知' : '付款通知')} icon="document-text-outline" secondary onPress={() => router.push({ pathname: '/order/notice/[id]', params: { id } })} />
+      <ActionButton title={trMessage(noticeStateReason(order, data.financialState) ? '歷史付款通知' : '付款通知')} icon="document-text-outline" secondary onPress={() => router.push({ pathname: '/order/notice/[id]', params: { id } })} />
       {actions.length > 0 && <View style={{ gap: 10 }}><SectionHeading title={tr("跟進訂單")} />
         <Text style={e.caption}>{tr`手動登記事實；App 不核實到帳、不寄貨，亦不執行退款。`}</Text>
         {primaryAction && <ActionButton title={actionTitle(primaryAction, order)} icon={primaryAction === 'mark_paid' ? 'checkmark-circle-outline' : 'cube-outline'} onPress={() => openAction(primaryAction)} />}

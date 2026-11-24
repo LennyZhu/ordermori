@@ -1,5 +1,7 @@
 // Canonical interface messages. Customer-entered text and PNG content never pass through this catalog.
 export const catalog = [
+  { id: 'backupFinancialLock', zh: '備份訂單的付款紀錄與永久財務鎖不一致，未還原。', en: 'The backup has inconsistent payment history and permanent financial locks. No data was restored.' },
+  { id: 'orderFinancialProtection', zh: '訂單付款紀錄與永久財務鎖不一致，只可查看資料。', en: 'The payment history conflicts with the permanent financial lock. This order is read-only.' },
   { id: 'paymentAlipayHk', zh: 'AlipayHK 支付寶香港', en: 'AlipayHK' },
   { id: 'paymentWeChatPayHk', zh: 'WeChat Pay HK 微信支付香港', en: 'WeChat Pay HK' },
   { id: 'paymentMissingQr', zh: '請匯入官方收款碼。', en: 'Import the official payment code.' },
