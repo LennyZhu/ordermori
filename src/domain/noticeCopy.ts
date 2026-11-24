@@ -7,7 +7,7 @@ const zh = {
   title:'付款通知 / Payment Notice', thanks:'Thank you', greeting:'感謝你的支持', buyerLabel:'買家', shippingLabel:'配送方式',
   itemLabel:'商品', quantityLabel:'數量', unitLabel:'單價', lineLabel:'金額', subtotalLabel:'商品小計', totalLabel:'應付總額',
   fpsTitle:'請使用 FPS 轉數快付款', paymeTitle:'請使用 PayMe 付款', bankTitle:'銀行轉帳資料',
-  alipayhkTitle:'請使用 AlipayHK 付款', wechatPayHkTitle:'請使用微信支付香港付款',
+  alipayhkTitle:'請使用支付寶香港付款', wechatPayHkTitle:'請使用微信支付香港付款',
   reminder:'付款後請通知商家核對。', legal:'僅供付款通知，並非正式收據或已收款確認。App 不驗證到帳。',
   discountLabel:'固定折扣', deliveryLabel:'商家收取運費', noteLabel:'給客人的備註',
   fpsId:'FPS ID', fpsPhone:'已關聯 FPS 的電話', fpsEmail:'已關聯 FPS 的電郵',

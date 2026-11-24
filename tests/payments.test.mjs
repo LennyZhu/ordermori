@@ -396,7 +396,7 @@ for (const [kind, otherKind] of [['alipayhk', 'wechat_pay_hk'], ['wechat_pay_hk'
       const otherQr = asset(shop.id, '2', otherKind);
       await store.registerPaymentAsset(qr);
       await store.registerPaymentAsset(otherQr);
-      const rawName = ' WeChat Pay HK 微信支付香港 '.repeat(4);
+      const rawName = ` ${'香港 Synthetic '.repeat(10).slice(0, 116)}  `;
       const unconfirmed = await method(store, kind, { ...emptyPayment(), accountName: rawName, qrAssetId: qr.id });
       const { id } = await create(store, snapshotOf(unconfirmed));
       assert.deepEqual((await store.getOrder(id)).payment, snapshotOf(unconfirmed));
@@ -408,27 +408,57 @@ for (const [kind, otherKind] of [['alipayhk', 'wechat_pay_hk'], ['wechat_pay_hk'
       await store.updateOrder(id, detail.order.revision, { ...toInput(detail), payment: snapshotOf(ready) });
       const saved = await store.getNoticeContext(id);
       for (const template of ['editorial', 'soft']) for (const locale of ['zh-HK', 'en']) {
-        const doc = buildNotice({ ...saved, preferences: { ...saved.preferences, template, locale } });
+        const context = { ...saved, preferences: { ...saved.preferences, template, locale } };
+        const doc = buildNotice(context);
         const blocks = noticeTextBlocks(doc);
+        const expectedTitle = kind === 'alipayhk'
+          ? (locale === 'en' ? 'Please pay by AlipayHK' : '請使用支付寶香港付款')
+          : (locale === 'en' ? 'Please pay by WeChat Pay HK' : '請使用微信支付香港付款');
+        assert.equal(doc.template, template);
+        assert.equal(doc.locale, locale);
         assert.equal(doc.payment.kind, kind);
-        assert.equal(doc.qr.id, qr.id);
+        assert.deepEqual(doc.qr, qr);
         assert.equal(blocks.payee, rawName);
         assert.equal(blocks.payeeLabel, locale === 'en' ? 'Payee' : '收款人');
-        assert.match(blocks.paymentTitle, kind === 'alipayhk' ? /AlipayHK/ : /WeChat Pay HK|微信支付香港/);
+        assert.equal(blocks.paymentTitle, expectedTitle);
         assert.ok(blocks.qrLabel && blocks.qrReminder);
-        assert.equal(blocks.bank, undefined);
+        for (const field of ['paymentLabel', 'paymentValue', 'bank', 'account']) assert.equal(blocks[field], undefined);
+        assert.equal(blocks['item-0-name'], '合成測試商品');
+        assert.equal(blocks['item-0-line'], 'HK$ 117.00');
+        assert.equal(blocks.total, 'HK$ 117.00');
+        assert.equal(blocks.brand, 'Made with OrderMori');
+        assert.match(blocks.legal, locale === 'en' ? /does not verify receipt of funds/ : /不驗證到帳/);
+        assert.match(blocks.reminder, locale === 'en' ? /notify the shop/ : /通知商家核對/);
+        const brandingRequest = { ...context, preferences: { ...context.preferences, removeBranding: true } };
+        assert.equal(noticeTextBlocks(buildNotice(brandingRequest)).brand, 'Made with OrderMori');
+        assert.equal(noticeTextBlocks(buildNotice({ ...brandingRequest, canRemoveBranding: true })).brand, undefined);
       }
       const prior = noticeSourceKey(buildNotice(saved));
       await method(store, kind, { ...ready, accountName: 'Changed', qrAssetId: null });
       assert.equal(noticeSourceKey(buildNotice(await store.getNoticeContext(id))), prior);
-      health.set(qr.id, 'missing');
-      const unavailable = await store.getNoticeContext(id);
-      assert.throws(() => buildNotice(unavailable), { code: 'notice' });
+      for (const state of ['missing', 'invalid']) {
+        health.set(qr.id, state);
+        const unavailable = await store.getNoticeContext(id);
+        assert.throws(() => buildNotice(unavailable), /請重新匯入可讀取的官方圖片/);
+      }
+      for (const mismatchedAsset of [{ ...qr, shopId: 'foreign' }, { ...qr, kind: otherKind }]) {
+        assert.throws(() => buildNotice({ ...saved, payment: { ...saved.payment, asset: mismatchedAsset } }), /原收款圖片不可用/);
+      }
       const edited = await store.getOrder(id);
       await store.updateOrder(id, edited.order.revision, { ...toInput(edited), payment: snapshotOf(other) });
-      const updated = buildNotice(await store.getNoticeContext(id));
-      assert.equal(updated.qr.id, otherQr.id);
-      assert.equal(noticeTextBlocks(updated).payee, undefined);
+      const updated = await store.getNoticeContext(id);
+      for (const template of ['editorial', 'soft']) for (const locale of ['zh-HK', 'en']) {
+        const doc = buildNotice({ ...updated, preferences: { ...updated.preferences, template, locale } });
+        const blocks = noticeTextBlocks(doc);
+        assert.deepEqual(doc.qr, otherQr);
+        assert.equal(blocks.payee, undefined);
+        assert.equal(blocks.payeeLabel, undefined);
+      }
+      const noCode = (await store.getPaymentSettings()).methods.find(entry => entry.kind === kind);
+      await store.updateOrder(id, updated.detail.order.revision, { ...toInput(updated.detail), payment: snapshotOf(noCode) });
+      const noQr = await store.getNoticeContext(id);
+      assert.equal(noQr.detail.payment.qrAssetId, null);
+      assert.throws(() => buildNotice(noQr), /請匯入官方收款碼/);
       assert.equal((await store.getHome()).createdCount, 1);
     } finally { db.close(); }
   });
