@@ -2,7 +2,6 @@
   "expo": {
     "name": "OrderMori",
     "slug": "ordermori",
-    "version": "0.1.0",
     "scheme": "ordermori",
     "platforms": [
       "ios"

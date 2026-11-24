@@ -6,6 +6,7 @@
 - **架構原則：** Local-First、Offline-First、盡量無自建後端
 - **目標語言：** English + 繁體中文（香港）
 - **目前狀態：** iOS 1.0.0（Build 1）已發布
+- **下一版本：** iOS 1.1.0 準備中，見[發布與驗收記錄](./docs/RELEASES.md)。
 
 品牌與工程命名規範請參閱 [OrderMori 品牌基線 v1](./ORDERMORI_BRAND_BASELINE_v1.md)。
 
@@ -32,7 +33,7 @@ Expo 會在讀取 App 配置時載入此選用檔案。Git 忽略此檔案，請
 ## 產品概要
 
 - 在「訂單」管理本機訂單、草稿、搜尋、篩選與待辦。
-- 在「我的店舖」設定收款方式、常用商品、語言與備份。
+- 在「我的店舖」設定收款方式、常用商品、語言與備份。1.1.0 支援 FPS 轉數快、PayMe、AlipayHK 支付寶香港、WeChat Pay HK 微信支付香港及銀行轉帳。
 - 可生成與分享付款通知 PNG。免費版每月可新增 15 張訂單，Pro 提供無限訂單與去除 PNG 品牌署名。
 - 款項與履約狀態由商家確認。備份與使用方式見[技術支援](https://ordermori-site.vercel.app/support/)。
 

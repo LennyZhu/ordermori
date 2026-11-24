@@ -7,6 +7,7 @@ import { LanguageController } from '../src/i18n/preferences.ts';
 const require = createRequire(import.meta.url);
 const release = require('../config/release.json');
 const configure = require('../app.config.js');
+const version = require('../package.json').version;
 const expected = {
   privacyPolicyUrl: 'https://ordermori-site.vercel.app/privacy/',
   supportUrl: 'https://ordermori-site.vercel.app/support/',
@@ -17,19 +18,24 @@ const expected = {
 test('release and Expo production config expose all four explicit public destinations without changing signing or versions', () => {
   for (const [key, url] of Object.entries(expected)) assert.equal(release[key], url);
   const previous = process.env.EAS_BUILD_PROFILE;
+  const confirmed = release.iosBuildNumberConfirmedUnused;
   process.env.EAS_BUILD_PROFILE = 'production';
   try {
+    release.iosBuildNumberConfirmedUnused = false;
+    assert.throws(() => configure({ config: {} }), /confirm this version\/build number is unused in App Store Connect/);
+    release.iosBuildNumberConfirmedUnused = true;
     const config = configure({ config: { ios: { appleTeamId: 'SYNTHETIC', infoPlist: { Existing: true } }, extra: { other: 'retained' } } });
     assert.deepEqual(config.extra.legal, expected);
     assert.equal(config.extra.other, 'retained');
     assert.equal(config.extra.eas.projectId, 'f6b5d95f-789e-43dd-8066-d386cf2e800a');
-    assert.equal(config.version, '1.0.0');
-    assert.equal(config.ios.buildNumber, '1');
+    assert.equal(config.version, version);
+    assert.equal(config.ios.buildNumber, release.iosBuildNumber);
     assert.equal(config.ios.bundleIdentifier, 'com.zhushunli.ordermori');
     assert.equal(config.ios.supportsTablet, false);
     assert.equal(config.ios.appleTeamId, 'SYNTHETIC');
     assert.equal(config.ios.infoPlist.Existing, true);
   } finally {
+    release.iosBuildNumberConfirmedUnused = confirmed;
     if (previous === undefined) delete process.env.EAS_BUILD_PROFILE;
     else process.env.EAS_BUILD_PROFILE = previous;
   }
@@ -51,18 +57,21 @@ test('resolved manual and system languages choose the matching configured page i
 
 test('production config rejects missing or non-HTTPS localized destinations instead of shipping unavailable links', () => {
   const previous = process.env.EAS_BUILD_PROFILE;
+  const confirmed = release.iosBuildNumberConfirmedUnused;
   process.env.EAS_BUILD_PROFILE = 'production';
+  release.iosBuildNumberConfirmedUnused = true;
   try {
     for (const key of Object.keys(expected)) {
       const saved = release[key];
       try {
         release[key] = null;
-        assert.throws(() => configure({ config: {} }), /production preparation incomplete/);
+        assert.throws(() => configure({ config: {} }), /public OrderMori/);
         release[key] = 'http://ordermori-site.vercel.app/';
-        assert.throws(() => configure({ config: {} }), /production preparation incomplete/);
+        assert.throws(() => configure({ config: {} }), /public OrderMori/);
       } finally { release[key] = saved; }
     }
   } finally {
+    release.iosBuildNumberConfirmedUnused = confirmed;
     if (previous === undefined) delete process.env.EAS_BUILD_PROFILE;
     else process.env.EAS_BUILD_PROFILE = previous;
   }
